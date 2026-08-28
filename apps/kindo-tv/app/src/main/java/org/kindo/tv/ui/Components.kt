@@ -40,6 +40,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -320,7 +321,10 @@ fun EpisodeCard(
             }
         }
         Spacer(Modifier.height(8.dp))
+        // 标签与数字同轴居中：Column 默认 Start 使"第"字距卡片左缘仅 ~13dp，
+        // 半分辨率窗口下观感如首字贴边被切；居中后与数字对齐
         Text("第 $episodeNo 集", color = KindoColors.textPrimary, fontSize = 22.sp,
-             fontWeight = FontWeight.Bold)
+             fontWeight = FontWeight.Bold, textAlign = TextAlign.Center,
+             modifier = Modifier.fillMaxWidth())
     }
 }
