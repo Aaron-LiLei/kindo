@@ -210,7 +210,10 @@ fun HomeScreen(viewModel: AppViewModel, micGranted: Boolean) {
                         "海洋" to "🐬", "动物" to "🦁", "数字" to "🔢", "英语" to "🔤",
                         "工程" to "🚜", "汽车" to "🚗", "恐龙" to "🦕", "太空" to "🚀",
                         "音乐" to "🎵", "故事" to "📖")
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        contentPadding = PaddingValues(horizontal = 14.dp),
+                    ) {
                         itemsIndexed(home.explore_themes) { i, theme ->
                             Box(
                                 modifier = Modifier
@@ -310,7 +313,10 @@ fun MediaRow(
     tokenProvider: () -> String,
     hubBase: String,
 ) {
-    LazyRow(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+    LazyRow(
+        horizontalArrangement = Arrangement.spacedBy(18.dp),
+        contentPadding = PaddingValues(horizontal = 14.dp),
+    ) {
         itemsIndexed(items) { idx, item ->
             MediaCard(item, badgeOf(idx), onClick, tokenProvider, hubBase)
         }
@@ -364,7 +370,10 @@ fun MediaCard(
 
 @Composable
 private fun LearningRow(items: List<LearningItem>, onClick: (LearningItem) -> Unit) {
-    LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+    LazyRow(
+        horizontalArrangement = Arrangement.spacedBy(18.dp),
+        contentPadding = PaddingValues(horizontal = 14.dp),
+    ) {
         items(items) { it ->
             Column(
                 modifier = Modifier
@@ -395,8 +404,13 @@ private fun SeriesRow(
     hubBase: String,
     onOpen: (SeriesRef) -> Unit,
 ) {
-    // 与全部内容的系列墙同规格海报卡（无海报内容叠标题区分）
-    LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+    // 与全部内容的系列墙同规格海报卡（无海报内容叠标题区分）。
+    // contentPadding：LazyRow 按自身边界裁子项，行首/末卡聚焦放大与光晕需要
+    // 留出空间，否则被行视口直线裁切
+    LazyRow(
+        horizontalArrangement = Arrangement.spacedBy(18.dp),
+        contentPadding = PaddingValues(horizontal = 14.dp),
+    ) {
         items(items) { s ->
             Column(
                 modifier = Modifier
@@ -422,8 +436,10 @@ private fun SeriesRow(
                     modifier = Modifier.padding(horizontal = 8.dp),
                 )
                 if (s.count > 0) {
+                    // 与标题同缩进：贴卡片左缘时观感如"🎬 被切"
                     Text("🎬 ${s.count} 集", color = KindoColors.textSecondary, fontSize = 14.sp,
-                         fontWeight = FontWeight.Bold)
+                         fontWeight = FontWeight.Bold,
+                         modifier = Modifier.padding(horizontal = 8.dp))
                 }
             }
         }

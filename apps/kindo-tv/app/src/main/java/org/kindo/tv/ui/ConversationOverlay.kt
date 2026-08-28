@@ -3,6 +3,7 @@ package org.kindo.tv.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -92,6 +93,7 @@ fun ConversationOverlay(viewModel: AppViewModel) {
                 Spacer(Modifier.height(4.dp))
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp),
                 ) {
                     itemsIndexed(state.options.take(4)) { _, opt ->
                         Box(
