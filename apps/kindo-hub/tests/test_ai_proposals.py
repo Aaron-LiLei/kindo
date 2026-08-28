@@ -10,6 +10,7 @@ import pytest
 
 from kindo.media.metadata import set_field_parent
 from kindo.models import (
+    AiJob,
     AiProposal,
     ContentEntity,
     ContentTopic,
@@ -298,6 +299,38 @@ def test_batch_apply_lows(admin):
     assert r.status_code == 200, r.text
     statuses = {x["proposal_id"]: x["status"] for x in r.json()["results"]}
     assert set(statuses.values()) == {"applied"}
+
+
+def test_dismiss_all_clears_pending_and_regenerable(admin):
+    """全部忽略、清掉重来（2026-08-28 用户决策）：PENDING 行全删（下次审计可
+    重新生成——区别于单条忽略 REJECTED 的同建议不再提醒），APPLIED 保留；
+    列表带 total；CATALOG_AUDIT 运行中 409。"""
+    _entity(admin, eid="e-clear", overview=None, language=None)
+    assert _create(admin, "e-clear", "set_language", {"language": "en"}) == "created"
+    assert _create(admin, "e-clear", "set_overview", {"overview": "v"}) == "created"
+    pid = _first_proposal_id(admin)  # 最新 = set_overview
+    assert (admin.client.post(f"/api/v1/admin/ai/proposals/{pid}/apply",
+                              headers=admin.admin_headers()).json()["status"] == "applied")
+    r = admin.client.get("/api/v1/admin/ai/proposals", headers=admin.admin_headers())
+    assert r.json()["total"] == 1  # 仅剩 set_language PENDING
+    # 运行中任务 → 409 整体不清
+    with admin.db.session() as session:
+        session.add(AiJob(id="job-run", job_type="CATALOG_AUDIT", state="running"))
+        session.commit()
+    r = admin.client.post("/api/v1/admin/ai/proposals/dismiss-all",
+                          headers=admin.admin_headers())
+    assert r.status_code == 409
+    with admin.db.session() as session:
+        session.get(AiJob, "job-run").state = "done"
+        session.commit()
+    # 正常清空：PENDING 全删、APPLIED 保留
+    r = admin.client.post("/api/v1/admin/ai/proposals/dismiss-all",
+                          headers=admin.admin_headers())
+    assert r.status_code == 200 and r.json()["cleared"] == 1
+    with admin.db.session() as session:
+        assert {x.status for x in session.query(AiProposal).all()} == {"APPLIED"}
+    # 删除后同建议可重新生成（REJECTED 才会被 dedupe 挡住）
+    assert _create(admin, "e-clear", "set_language", {"language": "en"}) == "created"
 
 
 def test_apply_state_transitions_guard(admin):

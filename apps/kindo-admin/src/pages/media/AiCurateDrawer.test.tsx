@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { App as AntApp } from 'antd'
 import { describe, expect, it, vi } from 'vitest'
 import type { AiJobRow, AiProposalRow } from '../../types/admin'
 
@@ -40,12 +41,13 @@ vi.mock('../../api/admin', () => {
       aiJobs: vi.fn().mockResolvedValue({ items: [doneJob] }),
       aiJob: vi.fn().mockResolvedValue(doneJob),
       aiJobCreate: vi.fn().mockResolvedValue({ job_id: 'job-2', state: 'queued' }),
-      aiProposals: vi.fn().mockResolvedValue({ items: [proposal] }),
+      aiProposals: vi.fn().mockResolvedValue({ items: [proposal], total: 1 }),
       aiProposalApply: vi.fn().mockResolvedValue({ proposal_id: 'p1', status: 'applied' }),
       aiProposalReject: vi.fn().mockResolvedValue({ proposal_id: 'p1', status: 'REJECTED' }),
       aiProposalsBatchApply: vi
         .fn()
         .mockResolvedValue({ results: [{ proposal_id: 'p1', status: 'applied' }], note: '' }),
+      aiProposalsDismissAll: vi.fn().mockResolvedValue({ cleared: 1, note: '' }),
     },
   }
 })
@@ -139,8 +141,28 @@ describe('AiCurateDrawer（AIA-001/002 媒体库 AI 整理）', () => {
   it('忽略建议调用 reject', async () => {
     render(<AiCurateDrawer open onClose={vi.fn()} />)
     await screen.findByText('可以完善 1 个内容')
-    await userEvent.click(screen.getByRole('button', { name: /忽略/ }))
+    // aria-label 精确匹配建议卡的忽略按钮（避免命中“全部忽略，清掉重来”）
+    await userEvent.click(screen.getByRole('button', { name: '忽略 汪汪队' }))
     const { adminApi } = await import('../../api/admin')
     await waitFor(() => expect(adminApi.aiProposalReject).toHaveBeenCalledWith('p1'))
+  })
+
+  it('全部忽略入口：显示待处理总数，确认后调用 dismiss-all 并回调刷新', async () => {
+    const onChanged = vi.fn()
+    // message.success 需要 AntApp 上下文
+    render(
+      <AntApp>
+        <AiCurateDrawer open onClose={vi.fn()} onChanged={onChanged} />
+      </AntApp>,
+    )
+    expect(
+      await screen.findByText(/当前共有 1 条待处理建议/),
+    ).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /全部忽略，清掉重来/ }))
+    // Popconfirm 确认（okText=全部忽略）
+    await userEvent.click(await screen.findByRole('button', { name: '全部忽略' }))
+    const { adminApi } = await import('../../api/admin')
+    await waitFor(() => expect(adminApi.aiProposalsDismissAll).toHaveBeenCalled())
+    expect(onChanged).toHaveBeenCalled()
   })
 })

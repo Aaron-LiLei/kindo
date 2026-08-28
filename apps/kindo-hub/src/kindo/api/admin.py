@@ -2062,8 +2062,9 @@ def admin_ai_proposals(request: Request,
         q = q.filter(AiProposal.proposal_type == proposal_type)
     if job_id:
         q = q.filter(AiProposal.job_id == job_id)
+    total = q.count()
     rows = q.order_by(AiProposal.created_at.desc()).limit(limit).all()
-    return {"items": [_ai_proposal_view(session, r) for r in rows]}
+    return {"total": total, "items": [_ai_proposal_view(session, r) for r in rows]}
 
 
 @router.post("/ai/proposals/{proposal_id}/reject")
@@ -2096,3 +2097,25 @@ def admin_ai_proposals_batch_apply(body: AiBatchApplyBody, request: Request,
     results = _ai_proposals(request).batch_apply(body.ids, allow_high=body.allow_high)
     return {"results": results,
             "note": "建议已批量应用（含清单式确认的高影响项）"}
+
+
+@router.post("/ai/proposals/dismiss-all")
+def admin_ai_proposals_dismiss_all(request: Request,
+                                   session: Session = Depends(get_db),
+                                   _admin=Depends(require_admin_write)):
+    """全部忽略、清掉重来（2026-08-28 用户决策）：批量删除全部待处理建议。
+    与单条忽略（REJECTED，同建议不再提醒）不同——删除行后下次 AI 整理可
+    重新生成一套建议；已应用/已忽略的历史不受影响。整理任务运行中 409。"""
+    from ..models import AiJob, AiProposal
+
+    active = (session.query(AiJob)
+              .filter(AiJob.job_type == "CATALOG_AUDIT",
+                      AiJob.state.in_(("queued", "running")))
+              .first())
+    if active is not None:
+        raise conflict("AI 整理正在进行中，请等任务结束后再清空")
+    cleared = (session.query(AiProposal)
+               .filter(AiProposal.status == "PENDING")
+               .delete(synchronize_session=False))
+    session.commit()
+    return {"cleared": cleared, "note": "已清空全部待处理建议，下次整理将重新生成"}

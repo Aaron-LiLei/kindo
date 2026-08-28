@@ -304,6 +304,8 @@ export const adminApi = {
   ) =>
     api.get(`/api/v1/admin/ai/proposals${toQuery(params)}`) as Promise<{
       items: AiProposalRow[]
+      /** 当前筛选条件下建议总数（列表仅返回前 limit 条） */
+      total: number
     }>,
   aiProposalApply: (id: string) =>
     api.post(`/api/v1/admin/ai/proposals/${id}/apply`, {}) as Promise<AiApplyResult>,
@@ -315,6 +317,11 @@ export const adminApi = {
   aiProposalsBatchApply: (ids: string[], allowHigh = false) =>
     api.post('/api/v1/admin/ai/proposals/batch-apply', { ids, allow_high: allowHigh }) as Promise<{
       results: AiApplyResult[]
+      note: string
+    }>,
+  aiProposalsDismissAll: () =>
+    api.post('/api/v1/admin/ai/proposals/dismiss-all', {}) as Promise<{
+      cleared: number
       note: string
     }>,
 }

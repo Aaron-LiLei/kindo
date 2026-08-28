@@ -4,7 +4,7 @@
  * + 待处理建议经 AiSuggestCard 呈现（LOW 批量 / HIGH 单决策）。
  * AI 不可用时仅本入口降级提示，不影响页面其余功能（交互 §10）。
  */
-import { Button, Drawer, Progress, Space, Typography } from 'antd'
+import { App as AntApp, Button, Drawer, Progress, Popconfirm, Space, Typography } from 'antd'
 import { ThunderboltOutlined } from '@ant-design/icons'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { adminApi } from '../../api/admin'
@@ -27,10 +27,13 @@ export function AiCurateDrawer({
 }) {
   const [job, setJob] = useState<AiJobRow | null>(null)
   const [proposals, setProposals] = useState<AiProposalRow[]>([])
+  const [pendingTotal, setPendingTotal] = useState(0)
   const [starting, setStarting] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [clearing, setClearing] = useState(false)
   const [error, setError] = useState('')
   const jobRef = useRef<AiJobRow | null>(null)
+  const { message } = AntApp.useApp()
 
   useEffect(() => {
     jobRef.current = job
@@ -43,6 +46,7 @@ export function AiCurateDrawer({
         setProposals(
           r.items.filter((p) => p.proposal_type === 'METADATA' || p.proposal_type === 'ARTWORK'),
         )
+        setPendingTotal(r.total)
       })
       .catch(() => {})
   }, [])
@@ -141,6 +145,18 @@ export function AiCurateDrawer({
       .then(refreshAfterAction)
       .catch((e) => setError(formatApiError(e)))
       .finally(() => setBusy(false))
+  }
+
+  const dismissAll = () => {
+    setClearing(true)
+    adminApi
+      .aiProposalsDismissAll()
+      .then((r) => {
+        message.success(`已清空 ${r.cleared} 条待处理建议`)
+        refreshAfterAction()
+      })
+      .catch((e) => setError(formatApiError(e)))
+      .finally(() => setClearing(false))
   }
 
   const active = job && ACTIVE_STATES.includes(job.state)
@@ -272,6 +288,27 @@ export function AiCurateDrawer({
           onApplyMany={applyMany}
           onReject={reject}
         />
+
+        {!active && pendingTotal > 0 ? (
+          <div aria-label="ai-dismiss-all">
+            <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 8 }}>
+              当前共有 {pendingTotal} 条待处理建议。如果积压太多处理不完，可以全部忽略、
+              清掉重来——已应用的不受影响，下次整理会重新生成。
+            </Typography.Paragraph>
+            <Popconfirm
+              title="清空全部待处理建议？"
+              description={`将忽略 ${pendingTotal} 条建议（含屏幕时间建议），下次整理重新生成。`}
+              okText="全部忽略"
+              cancelText="先不了"
+              okButtonProps={{ danger: true }}
+              onConfirm={dismissAll}
+            >
+              <Button loading={clearing} danger size="small">
+                全部忽略，清掉重来
+              </Button>
+            </Popconfirm>
+          </div>
+        ) : null}
 
         <div>
           <Typography.Title level={5} style={{ marginBottom: 4 }}>
