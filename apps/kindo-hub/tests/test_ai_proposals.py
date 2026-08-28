@@ -14,6 +14,7 @@ from kindo.models import (
     ContentEntity,
     ContentTopic,
     EntityTopic,
+    Media,
 )
 
 
@@ -113,6 +114,87 @@ def test_apply_metadata_writes_parent_provenance(admin):
         assert e.overview == "海洋冒险故事"
         prov = (e.meta_provenance_json or {})["overview"]
         assert prov["source"] == "parent" and not prov["locked"]  # PARENT_EXPLICIT
+
+
+def _media_entity(env, *, eid="ent-m", mid="med-1"):
+    """带 media 行的叶子实体（movie）——AI 应用需回写 media 展示字段。"""
+    with env.db.session() as session:
+        session.add(Media(id=mid, mount_id="mnt-1", path_key=f"/{mid}.mp4",
+                          title="测试影片", media_type="movie"))
+        session.add(ContentEntity(
+            id=eid, entity_type="movie", title="测试影片",
+            content_class="ENTERTAINMENT", modality="VIDEO", match_status="none",
+            source_media_id=mid))
+        session.commit()
+    return eid
+
+
+def test_apply_metadata_syncs_media_row(admin):
+    """2026-08-28 修复：应用建议只写 entity 而 Admin 媒体库/TV 浏览读 media 行
+    ——language/age_band 必须回写（含 parent_edited_json + metadata_version+1，
+    与手动 PATCH 同语义，重扫不覆盖）。"""
+    _media_entity(admin, eid="e-sync", mid="med-sync")
+    assert _create(admin, "e-sync", "set_language",
+                   {"language": "en"}) == "created"
+    pid = _first_proposal_id(admin)
+    r = admin.client.post(f"/api/v1/admin/ai/proposals/{pid}/apply",
+                          headers=admin.admin_headers())
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "applied"
+    with admin.db.session() as session:
+        m = session.get(Media, "med-sync")
+        assert m.language == "en"
+        assert (m.parent_edited_json or {}).get("language") == "en"
+        assert m.metadata_version == 2  # 1 → +1
+        e = session.get(ContentEntity, "e-sync")
+        assert e.language == "en"  # entity 同步为 canonical 值
+
+
+def test_apply_age_range_syncs_media_age_band(admin):
+    _media_entity(admin, eid="e-age", mid="med-age")
+    assert _create(admin, "e-age", "set_age_range",
+                   {"age_min": 0, "age_max": 5}) == "created"
+    pid = _first_proposal_id(admin)
+    r = admin.client.post(f"/api/v1/admin/ai/proposals/{pid}/apply",
+                          headers=admin.admin_headers())
+    assert r.status_code == 200, r.text
+    with admin.db.session() as session:
+        m = session.get(Media, "med-age")
+        assert m.age_band == "0-5"  # 与 parse_age_band 可逆的文本格式
+        assert (m.parent_edited_json or {}).get("age_band") == "0-5"
+
+
+def test_apply_metadata_entity_without_media_row_ok(admin):
+    """series/season 等无 source_media_id 的实体：无行可回写，应用照常成功。"""
+    _entity(admin, eid="e-nomedia", overview=None)  # _entity 不带 source_media_id
+    assert _create(admin, "e-nomedia", "set_age_range",
+                   {"age_min": 2, "age_max": 6}) == "created"
+    pid = _first_proposal_id(admin)
+    r = admin.client.post(f"/api/v1/admin/ai/proposals/{pid}/apply",
+                          headers=admin.admin_headers())
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "applied"
+
+
+def test_create_pending_same_target_deduped(admin):
+    """AIA-008 收紧：同实体同目标面已有 PENDING 时，不同值也不再新增（否则
+    每轮全库审计都会以不同值绕过 dedupe_key 堆积建议）；不同目标面不受影响。"""
+    _entity(admin, eid="e-flood", overview=None, language=None)
+    p1 = {"why": "缺简介一", "what": "补一", "impact": "更易找"}
+    assert _create(admin, "e-flood", "set_overview",
+                   {"overview": "v1"}, parts=p1) == "created"
+    assert _create(admin, "e-flood", "set_overview", {"overview": "v2"}) == "skipped_duplicate"
+    assert _create(admin, "e-flood", "set_language",
+                   {"language": "en"}) == "created"  # 不同字段可并存
+    # 处理完（拒绝）后同字段可再提新建议
+    with admin.db.session() as session:
+        pid = (session.query(AiProposal)
+               .filter(AiProposal.status == "PENDING",
+                       AiProposal.summary.like("%缺简介一%")).first().id)
+        session.commit()
+    assert admin.client.post(f"/api/v1/admin/ai/proposals/{pid}/reject",
+                             headers=admin.admin_headers()).status_code == 200
+    assert _create(admin, "e-flood", "set_overview", {"overview": "v3"}) == "created"
 
 
 def test_apply_add_topic_links_and_syncs(admin):

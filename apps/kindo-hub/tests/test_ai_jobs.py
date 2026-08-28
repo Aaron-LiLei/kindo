@@ -150,6 +150,25 @@ def test_job_failed_on_runtime_error(env):
     assert "模型输出" in body["error_summary"]
 
 
+def test_job_failed_error_summary_includes_exception_type(env):
+    """2026-08-28 修复：str(exc) 为空的异常（如裸 CancelledError）曾把
+    error_summary 存成空串——家长只看到"失败"没有原因。"""
+    env.bootstrap_admin()
+    _add_entity(env, "f-2")
+
+    class SilentBoom(FakeRuntime):
+        def run_ai(self, profile, ctx):
+            raise ValueError()  # str() == ""
+
+    env.state._extra["ai_jobs"]._runtime = SilentBoom()
+    job_id = env.client.post("/api/v1/admin/ai/jobs",
+                             json={"job_type": "CATALOG_AUDIT"},
+                             headers=env.admin_headers()).json()["job_id"]
+    body = _wait_done(env, job_id)
+    assert body["state"] == "failed"
+    assert body["error_summary"].startswith("ValueError")
+
+
 def test_restart_marks_interrupted(env):
     env.bootstrap_admin()
     with env.db.session() as session:

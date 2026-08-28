@@ -135,8 +135,9 @@ class AiJobRunner:
                         (result or {}).get("counts"))
         except Exception as exc:
             logger.exception("AI 任务失败 job=%s", job_id)
+            # str(exc) 可能为空（如裸 CancelledError）——补类型名保证家长可见失败原因
             self._update(job_id, state="failed", finished_at=_now(),
-                         error_summary=str(exc)[:500])
+                         error_summary=f"{type(exc).__name__}: {exc}"[:500])
 
     def _run_usage_summary(self, job_id: str) -> dict:
         """家庭使用摘要（AIA-003/004）：无副作用摘要 + 可选 POLICY 建议（HIGH）。"""

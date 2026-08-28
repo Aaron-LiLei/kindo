@@ -15,6 +15,7 @@ import json
 import logging
 from datetime import UTC, datetime
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..errors import invalid_request, not_found
@@ -290,6 +291,8 @@ class ProposalService:
                 .first())
         if dupe is not None:
             return "skipped_duplicate"
+        if self._has_pending_target(session, profile, changes_part):
+            return "skipped_duplicate"
         summary = payload.get("summary") or {}
         session.add(AiProposal(
             id=new_id(), profile=profile, proposal_type=proposal_type,
@@ -301,6 +304,36 @@ class ProposalService:
             job_id=job_id,
         ))
         return "created"
+
+    @staticmethod
+    def _proposal_targets(payload: dict) -> set[str]:
+        """建议触碰的目标面（字段名/关联名/artwork 位）——同实体同目标的
+        未决建议视为同一条提醒。"""
+        targets = set(payload.get("fields") or {})
+        if payload.get("topics_add"):
+            targets.add("topics")
+        if payload.get("characters_add"):
+            targets.add("characters")
+        if payload.get("kind"):
+            targets.add(f"artwork:{payload['kind']}")
+        return targets
+
+    def _has_pending_target(self, session: Session, profile: str,
+                            changes_part: dict) -> bool:
+        """同实体同目标面已有 PENDING → 不再新增（AIA-008 收紧：同字段不同
+        值的建议每轮审计都会绕过 dedupe_key 堆积，家长处理不完；处理完现有
+        建议或字段补齐后，下轮审计仍可按需再提）。"""
+        targets = self._proposal_targets(changes_part)
+        if not targets:
+            return False
+        entity_id = changes_part.get("entity_id") or ""
+        rows = (session.query(AiProposal.payload_json)
+                .filter(AiProposal.status == "PENDING",
+                        AiProposal.profile == profile,
+                        func.json_extract(AiProposal.payload_json,
+                                          "$.entity_id") == entity_id)
+                .all())
+        return any(targets & self._proposal_targets(p or {}) for (p,) in rows)
 
     def create_from_advisor(self, session: Session, *, job_id: str | None,
                             kind: str, payload_parts: dict,
@@ -448,6 +481,7 @@ class ProposalService:
             if not apply_with_provenance(entity, field, value, "parent"):
                 return {"status": "expired",
                         "reason": f"字段「{field}」写入被拒（锁定或来源等级更高）"}
+        self._sync_media_row(session, entity, fields)
         if payload.get("topics_add"):
             self._link_names(session, entity, payload["topics_add"], topic=True)
         if payload.get("characters_add"):
@@ -455,6 +489,41 @@ class ProposalService:
         return {"status": "applied",
                 "applied_fields": sorted(fields.keys()),
                 "note": "已按家长确认写入（来源=家长）"}
+
+    def _sync_media_row(self, session: Session, entity: ContentEntity,
+                        fields: dict) -> None:
+        """应用结果回写 media 行展示字段：Admin 媒体库列表/详情与 TV 浏览的
+        language/age_band 读取 media 行，不回写则家长应用建议后看不到任何
+        变化。与家长手动 PATCH 同语义：parent_edited_json 记录 +
+        metadata_version+1（重扫不覆盖，§7.4）。series/season 等无
+        source_media_id 的实体没有对应行，跳过。
+        """
+        if not entity.source_media_id:
+            return
+        media = session.get(Media, entity.source_media_id)
+        if media is None:
+            return
+        edited = dict(media.parent_edited_json or {})
+        changed = False
+        if fields.get("language"):
+            media.language = fields["language"]
+            edited["language"] = fields["language"]
+            changed = True
+        if "age_min" in fields or "age_max" in fields:
+            # age_band 文本格式与 parse_age_band 可逆（'3-6'/'3+'）
+            if entity.age_min is not None and entity.age_max is not None:
+                band = f"{entity.age_min}-{entity.age_max}"
+            elif entity.age_min is not None:
+                band = f"{entity.age_min}+"
+            else:
+                band = None
+            if band:
+                media.age_band = band
+                edited["age_band"] = band
+                changed = True
+        if changed:
+            media.parent_edited_json = edited
+            media.metadata_version += 1
 
     def _apply_artwork(self, session: Session, row: AiProposal) -> dict:
         payload = row.payload_json or {}
