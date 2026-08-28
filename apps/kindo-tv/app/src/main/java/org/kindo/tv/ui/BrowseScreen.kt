@@ -123,10 +123,12 @@ private fun MediaGridContent(
             }
             LazyVerticalGrid(
                 state = gridState,
-                // 4 列大卡（2026-08-27 产品决策）：284dp 宽卡 + 16dp 间距
-                // = 4×284+3×16 = 1184dp，1280dp 屏留 48dp 边距刚好
+                // 4 列大卡：280dp 级宽卡 + 18dp 间距（1280dp 屏留 48dp 边距）
                 columns = GridCells.Fixed(4),
-                contentPadding = PaddingValues(horizontal = 48.dp, vertical = 8.dp),
+                // vertical ≥ 24dp：聚焦卡 1.08x 放大 + 外发光/投影约 12dp 画在
+                // 卡片边界外，滚动到网格首/末行时视口硬裁会把下/上缘切成直线
+                // （2026-08-28 修复：此前 8dp 不足）
+                contentPadding = PaddingValues(horizontal = 48.dp, vertical = 24.dp),
                 horizontalArrangement = Arrangement.spacedBy(18.dp),
                 verticalArrangement = Arrangement.spacedBy(20.dp),
                 modifier = Modifier.fillMaxSize(),
@@ -240,7 +242,8 @@ private fun SeriesWall(
             LazyVerticalGrid(
                 state = gridState,
                 columns = GridCells.Fixed(4),
-                contentPadding = PaddingValues(horizontal = 48.dp, vertical = 8.dp),
+                // 同上：vertical 24dp 防聚焦卡在网格首/末行被视口裁切
+                contentPadding = PaddingValues(horizontal = 48.dp, vertical = 24.dp),
                 horizontalArrangement = Arrangement.spacedBy(18.dp),
                 verticalArrangement = Arrangement.spacedBy(20.dp),
                 modifier = Modifier.fillMaxSize(),

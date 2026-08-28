@@ -213,7 +213,12 @@ private fun DetailContent(viewModel: AppViewModel, d: MediaDetail) {
                 )
             }
             item {
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                // 18dp 间距与内容边距：聚焦卡 1.08x + 外发光画在边界外，
+                // 行首/行尾需要留出空间，否则被 LazyRow 视口直线裁切
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(18.dp),
+                    contentPadding = PaddingValues(horizontal = 14.dp),
+                ) {
                     itemsIndexed(series.episodes) { _, ep ->
                         EpisodeCard(
                             episodeNo = ep.episode_no ?: 1,
@@ -236,7 +241,10 @@ private fun DetailContent(viewModel: AppViewModel, d: MediaDetail) {
                 )
             }
             item {
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(18.dp),
+                    contentPadding = PaddingValues(horizontal = 14.dp),
+                ) {
                     itemsIndexed(course.lessons) { _, lesson ->
                         Column(
                             modifier = Modifier
