@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  hub:
+    name: Kindo Hub（ruff / mypy / pytest）
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/kindo-hub
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: 安装 ffmpeg（ubuntu-latest 不再预装，媒体探测/测试素材生成依赖）
+        run: sudo apt-get update -q && sudo apt-get install -y -q ffmpeg
+      - name: 安装依赖
+        run: |
+          python -m pip install -U pip
+          pip install -e ".[dev]"
+          # 与 requirements.lock 对齐（可复现；dev 工具版本同 pyproject 固定）。
+          # lock 安装失败必须让 job 失败，不得 || true 掩盖
+          pip install -r requirements.lock --no-deps
+      - name: ruff
+        run: ruff check src tests
+      - name: mypy
+        run: mypy src
+      - name: pytest
+        run: pytest tests -q -m "not docker"
+        env:
+          # TestClient 环境；ffmpeg/ffprobe 由上方 apt 步骤提供
+          KINDO_ADMIN_BOOTSTRAP_TOKEN: ci-token
+
+  admin:
+    name: Kindo Admin（tsc / lint / test / build）
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/kindo-admin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/kindo-admin/package-lock.json
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm run lint
+      - run: npm run test
+      - run: npm run build
+
+  tv:
+    name: Kindo TV（assembleDebug）
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/kindo-tv
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: 构建
+        run: ./gradlew assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kindo-tv-debug-apk
+          path: apps/kindo-tv/app/build/outputs/apk/debug/app-debug.apk

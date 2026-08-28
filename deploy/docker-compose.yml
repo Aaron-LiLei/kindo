@@ -1,0 +1,46 @@
+services:
+  kindo-hub:
+    build:
+      context: ../apps/kindo-hub
+      dockerfile: ../../deploy/kindo-hub.Dockerfile
+    image: kindo-hub:0.1.0
+    container_name: kindo-hub
+    restart: unless-stopped
+    ports:
+      - "8090:8090"
+    environment:
+      # LLM Provider 接入信息经环境变量/Secret 注入（技术方案 §12.2；不写明文进配置文件）
+      KINDO_LLM_BASE_URL: ${KINDO_LLM_BASE_URL:-}
+      KINDO_LLM_API_KEY: ${KINDO_LLM_API_KEY:-}
+      KINDO_LLM_MODEL: ${KINDO_LLM_MODEL:-}
+      # 首次初始化管理员；不设则自动生成一次性 token 写入 data/bootstrap/
+      KINDO_ADMIN_BOOTSTRAP_TOKEN: ${KINDO_ADMIN_BOOTSTRAP_TOKEN:-}
+    volumes:
+      # 容器以 uid 10001（kindo）运行：宿主目录需可写
+      #   mkdir -p data/hub && sudo chown -R 10001 data/hub
+      - ./data/hub:/data                     # SQLite + 日志 + 缓存（本地文件系统，勿放网络挂载）
+      - ./config:/config:ro                  # kindo.yaml
+      - ${KINDO_MEDIA_DIR:-./media}:/media/family:ro   # 家庭媒体，只读挂载（ADM-002）
+    depends_on:
+      kindo-asr:
+        condition: service_healthy
+
+  kindo-asr:
+    build:
+      context: ../apps/kindo-asr
+      dockerfile: ../../deploy/kindo-asr.Dockerfile
+    image: kindo-asr:0.1.0
+    container_name: kindo-asr
+    restart: unless-stopped
+    environment:
+      # 儿童语音热词（ASR-005）：Hub 从媒体库自动生成（管理后台「AI 模型 →
+      # 语音热词」重建），经共享数据卷只读消费；也可在文件 "## manual" 段
+      # 手工补写（重建保留）。热词在识别器初始化时加载——修改后需
+      # docker compose restart kindo-asr 生效。
+      KINDO_ASR_HOTWORDS_FILE: /hub-data/hotwords.txt
+    volumes:
+      - ./config:/app/config:ro
+      - ./data/hub:/hub-data:ro             # Hub 生成的 hotwords.txt（只读）
+    # 仅容器网络内可达：原始语音只暴露给 Hub（架构 §13）
+    expose:
+      - "8081"

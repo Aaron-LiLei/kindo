@@ -1,0 +1,35 @@
+# 童映 Kindo 配置样例（复制到 deploy/config/kindo.yaml 后修改）
+# 层级：环境变量/Secret 引用 > 本文件 > 内置默认值（技术方案 §12.1）
+server:
+  bind: "0.0.0.0"
+  port: 8090
+  display_name: "Kindo Hub"
+  mdns_enabled: true
+
+timezone: "Asia/Shanghai"
+
+# 媒体来源不在此声明（2026-08-25 来源全页面化决策）：本地目录 / SMB / WebDAV
+# 一律在 Web 后台「媒体库 → 来源与扫描」页面录入。本地源的容器内路径（如
+# /media/family）由 docker-compose 卷挂载提供；网络源凭据页面录入（Fernet 落盘加密）。
+# 旧配置文件的 media_mounts 段仍会被启动收养（legacy 兼容），新部署不要使用。
+
+conversation:
+  follow_up_seconds: 6        # TTS 后追问窗口（PoC 基线，可配置）
+  session_idle_seconds: 600   # Session 空闲超时（PoC 基线，可配置）
+
+playback:
+  progress_interval_seconds: 5
+  lost_protection_seconds: 120
+
+# LLM Provider：Secret 经 ${ENV} 引用，浏览器/TV 永不接触
+llm_providers:
+  - id: main
+    display_name: 主模型
+    protocol: openai_chat_completions
+    base_url: ${KINDO_LLM_BASE_URL}
+    api_key: ${KINDO_LLM_API_KEY}
+    model: ${KINDO_LLM_MODEL}
+
+# 本地 ASR Provider（kindo-asr 容器）
+asr:
+  endpoint: "http://kindo-asr:8081"

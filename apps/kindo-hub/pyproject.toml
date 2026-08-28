@@ -1,0 +1,81 @@
+[project]
+name = "kindo-hub"
+version = "0.1.0"
+description = "童映 Kindo — AI 儿童家庭媒体系统 · Family Hub（模块化单体）"
+license = "MIT"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "fastapi==0.115.14",
+    "python-multipart==0.0.20",
+    "uvicorn[standard]==0.35.0",
+    "pydantic==2.11.7",
+    "SQLAlchemy==2.0.41",
+    "alembic==1.16.2",
+    "argon2-cffi==25.1.0",
+    "cryptography==50.0.0",
+    "httpx==0.28.1",
+    "PyYAML==6.0.2",
+    "tzdata==2025.2",
+    "zeroconf==0.147.0",
+    "smbprotocol==1.17.0",
+    "defusedxml==0.7.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "wsgidav==4.3.1",
+    "cheroot==10.0.1",
+    "pytest==8.4.1",
+    "pytest-asyncio==1.0.0",
+    "pytest-cov==7.0.0",
+    "websockets==15.0.1",
+    "ruff==0.12.3",
+    "mypy==1.16.1",
+    "types-PyYAML==6.0.12.20260815",
+    "pillow==12.3.0",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "--strict-markers"
+markers = [
+    "docker: 需要 Docker 引擎（SMB 真容器联调）",
+    "slow: 端到端/真实媒体素材，耗时明显长于单元测试",
+]
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 140
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B"]
+ignore = ["B008"]  # FastAPI Depends() 在默认参数中使用是官方模式
+
+[tool.ruff.lint.per-file-ignores]
+"src/kindo/agent/prompts.py" = ["E501"]  # 中文系统提示词自然长行
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+check_untyped_defs = true
+warn_unused_ignores = false
+exclude = ["alembic/"]
+
+[tool.coverage.run]
+source = ["kindo"]
+omit = ["kindo/_schema_frozen_0001.py"]
+
+[tool.coverage.report]
+# 基线门槛：低于此值失败（当前实测 ~80%）
+fail_under = 75
+show_missing = true

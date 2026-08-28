@@ -1,0 +1,24 @@
+# 跨平台换行与二进制声明：仓库内文本一律 LF（Windows 检出按 core.autocrlf）；
+# docx/jar/媒体等显式按二进制处理，防止 text=auto 误判造成损坏
+* text=auto
+gradlew text eol=lf
+*.sh text eol=lf
+*.bat text eol=crlf
+
+*.jar binary
+*.docx binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.wav binary
+*.mp3 binary
+*.mp4 binary
+*.onnx binary
+*.tar.bz2 binary
+*.db binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
