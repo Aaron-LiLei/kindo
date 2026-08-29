@@ -1,0 +1,24 @@
+[project]
+name = "kindo-tts"
+version = "0.1.0"
+description = "童映 Kindo — 本地克隆 TTS Provider 服务（kindo-tts，ZipVoice 零样本）"
+license = "MIT"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "fastapi==0.115.14",
+    "uvicorn[standard]==0.35.0",
+    "numpy==2.3.1",
+    "sherpa-onnx==1.13.6",
+    # linux 下 sherpa-onnx 需要 onnxruntime（与 kindo-asr 同约定，版本全锁定）
+    "onnxruntime==1.23.2; sys_platform == 'linux'",
+]
+
+[project.optional-dependencies]
+dev = ["pytest==8.4.1", "httpx==0.28.1"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

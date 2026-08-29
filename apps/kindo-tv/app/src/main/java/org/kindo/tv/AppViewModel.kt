@@ -26,6 +26,7 @@ import org.kindo.tv.net.VoiceClient
 import org.kindo.tv.playback.PlaybackController
 import org.kindo.tv.playback.StreamDescriptor
 import org.kindo.tv.playback.TrackRef
+import org.kindo.tv.tts.HubTtsPlayer
 import org.kindo.tv.tts.KindoTts
 import java.util.UUID
 
@@ -110,6 +111,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         it.onDropped = { onVoiceDropped() }
     }
     val tts = KindoTts(app)
+    // hub_tts（家长声音克隆，技术方案 §6.7）：tts.request 带 audio_path 时走此播放器，
+    // 取音频失败/解码失败回退系统 TTS 读同句文本（事件语义一致）
+    val hubTts = HubTtsPlayer(hub, fallback = { id, text, onEvent -> tts.speak(id, text, onEvent) })
     val playbackController = PlaybackController(app)
 
     private val _screenStack = MutableStateFlow<List<Screen>>(listOf(Screen.Bootstrap))
@@ -662,6 +666,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /** SPEAKING 期间按 AI 键：中断 TTS 并立即回到 LISTENING（交互 §5）。 */
     fun interruptSpeaking() {
         tts.stop()
+        hubTts.stop() // hub_tts（家长声音克隆，§6.7）与系统 TTS 同打断语义
         conversationSessionId?.let { currentTtsId?.let { tid -> realtime.sendTts(tid, "interrupted") } }
         conversation.value = conversation.value.copy(phase = "listening", options = emptyList())
         voice.openStream()
@@ -669,10 +674,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private var currentTtsId: String? = null
 
+    // 分句流式播报（技术方案 §11.4）：一回合并发多条 tts.request 逐句排队；
+    // 仅当"回合文本已完结（assistant.text.final）+ 排队全部播完"才进入追问窗口
+    private val pendingTtsIds = mutableSetOf<String>()
+    private var turnTextDone = false
+
     fun endConversation() {
         voice.close()
         tts.stop()
+        hubTts.stop()
         followUpJob?.cancel()
+        pendingTtsIds.clear()
+        turnTextDone = false
         val sid = conversationSessionId
         conversationSessionId = null
         currentTtsId = null
@@ -696,6 +709,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             "conversation.state" -> {
                 val state = (event["payload"] as? Map<*, *>)?.get("state") as? String ?: return
                 if (!conversation.value.active) return
+                if (state == "thinking") {
+                    // 新回合开始：清空上一回合的播报收尾状态
+                    pendingTtsIds.clear()
+                    turnTextDone = false
+                }
                 conversation.value = conversation.value.copy(phase = state)
                 if (state == "listening") voice.openStream()
             }
@@ -715,9 +733,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 val text = payload["text"] as? String
                 val cur = conversation.value
                 conversation.value = when {
-                    delta != null -> cur.copy(aiText = cur.aiText + delta, phase = "thinking")
+                    // 分句流式期间 delta 与 tts.request 交错到达，不把 speaking 打回 thinking
+                    delta != null -> cur.copy(
+                        aiText = cur.aiText + delta,
+                        phase = if (cur.phase == "speaking") "speaking" else "thinking",
+                    )
                     text != null -> cur.copy(aiText = text)
                     else -> return
+                }
+                if (text != null) {
+                    // final 是"本回合 tts.request 已发完"的信号（Hub 保证顺序）
+                    turnTextDone = true
+                    maybeFinishSpeaking()
                 }
             }
             "tool.started" -> {
@@ -729,18 +756,35 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 val payload = event["payload"] as? Map<*, *> ?: return
                 val ttsId = payload["tts_id"] as? String ?: return
                 val text = payload["text"] as? String ?: return
+                // 会话已被用户结束（不聊了）：迟到的响应不再出声，避免盖在已开始的播放上。
+                // 语音点播的确认播报（startPlayback 关对话但保留 sessionId，配合 duck）不受影响
+                if (!conversation.value.active && conversationSessionId == null) return
                 currentTtsId = ttsId
+                pendingTtsIds.add(ttsId)
                 conversation.value = conversation.value.copy(phase = "speaking")
                 if (duckedByConversation) playbackController.duck()
-                tts.speak(ttsId, text) { kind ->
+                // 事件回报两条路径完全一致（started/finished/interrupted）；
+                // finished 仅末句（last_tts_id）驱动追问窗口，来源无关
+                val onTtsEvent: (String) -> Unit = { kind ->
                     when (kind) {
                         "started" -> Unit
-                        "finished" -> onTtsFinished(ttsId)
+                        "finished" -> {
+                            realtime.sendTts(ttsId, "finished")
+                            pendingTtsIds.remove(ttsId)
+                            maybeFinishSpeaking()
+                        }
                         "interrupted" -> {
                             realtime.sendTts(ttsId, "interrupted")
+                            pendingTtsIds.clear()
                             conversation.value = conversation.value.copy(phase = "listening")
                         }
                     }
+                }
+                val audioPath = payload["audio_path"] as? String
+                if (audioPath != null) {
+                    hubTts.speak(ttsId, audioPath, text, onTtsEvent)
+                } else {
+                    tts.speak(ttsId, text, onTtsEvent)
                 }
             }
             "clarification.options" -> {
@@ -943,8 +987,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private fun parseConstraints(raw: String): org.kindo.tv.core.PlayConstraints? =
         org.kindo.tv.core.ModelsJson.parseConstraints(raw)
 
-    private fun onTtsFinished(ttsId: String) {
-        realtime.sendTts(ttsId, "finished")
+    /** 分句流式播报收尾门控：回合文本已完结（assistant.text.final 已达，Hub 保证
+     *  此时本回合 tts.request 全部下发）且排队语句全部播完，才进入追问窗口。
+     *  中间句完成、或 final 先于尾句到达时，都不触发。 */
+    private fun maybeFinishSpeaking() {
+        if (!turnTextDone) return
+        if (pendingTtsIds.isNotEmpty()) return
+        if (conversation.value.phase != "speaking") return
         // 接力互动内：TTS 完继续听（时间盒内保持听/想/说循环，不进追问关闭窗口）
         if (transition.value.phase == "interaction") {
             conversation.value = conversation.value.copy(phase = "listening")
@@ -1039,6 +1088,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         capabilitiesJob?.cancel()
         voice.close()
         tts.shutdown()
+        hubTts.release()
         playbackController.release()
         realtime.close()
     }

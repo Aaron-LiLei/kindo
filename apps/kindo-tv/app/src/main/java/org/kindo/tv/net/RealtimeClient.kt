@@ -59,12 +59,19 @@ class RealtimeClient(
 
     private fun openSocket() {
         if (!wantConnected) return
+        // 幂等：重复 connect（bound retry 重入等）必须先关旧连接。旧连接若仍留在
+        // Hub 广播集合里，同一事件会投递两份（曾致同一条回复 TTS 连播两遍）
+        ws?.close(1000, "superseded")
         val url = baseUrl.replaceFirst("http", "ws") + "/api/v1/realtime"
         val request = Request.Builder().url(url)
             .header("Authorization", "Bearer $token")
             .build()
         ws = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
+                if (ws !== webSocket) {  // 输掉了竞态：更新的连接已存在
+                    webSocket.close(1000, "superseded")
+                    return
+                }
                 reconnectAttempt = 0
                 webSocket.send(
                     JSONObject().put("type", "hello").put("last_server_seq", lastSeq).toString(),
@@ -77,6 +84,7 @@ class RealtimeClient(
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
+                if (ws !== webSocket) return  // 旧 socket 残留帧不进处理链
                 try {
                     val obj = JSONObject(text)
                     val type = obj.optString("type")
@@ -114,10 +122,12 @@ class RealtimeClient(
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                if (ws !== webSocket) return  // 旧 socket 的关闭不得触发重连
                 scheduleReconnect()
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                if (ws !== webSocket) return
                 scheduleReconnect()
             }
         })

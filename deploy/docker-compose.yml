@@ -44,3 +44,17 @@ services:
     # 仅容器网络内可达：原始语音只暴露给 Hub（架构 §13）
     expose:
       - "8081"
+
+  # 可选克隆 TTS（PRD TTS-005~007 / 技术方案 §6.7）：家长声音零样本克隆。
+  # 模型缺失时以 no_model 降级启动，Hub 自动回退 Android 系统 TTS；不需要该
+  # 功能时可整段注释（kindo.yaml tts.endpoint 留空即不启用）。
+  kindo-tts:
+    build:
+      context: ../apps/kindo-tts
+      dockerfile: ../../deploy/kindo-tts.Dockerfile
+    image: kindo-tts:0.1.0
+    container_name: kindo-tts
+    restart: unless-stopped
+    # 仅容器网络内可达：家长声音样本与合成结果只暴露给 Hub（PRD TTS-007）
+    expose:
+      - "8092"

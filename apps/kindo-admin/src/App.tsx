@@ -9,6 +9,7 @@ import {
   LogoutOutlined,
   RobotOutlined,
   SafetyOutlined,
+  AudioOutlined,
   DesktopOutlined,
   SettingOutlined,
   GiftOutlined,
@@ -25,6 +26,7 @@ import { PolicyPage } from './pages/Policy'
 import { AnalyticsPage } from './pages/Analytics'
 import { ActivitiesPage } from './pages/Activities'
 import { ModelsPage } from './pages/Models'
+import { VoicePage } from './pages/Voice'
 import { DevicesPage } from './pages/Devices'
 import { SettingsPage } from './pages/Settings'
 
@@ -36,6 +38,7 @@ const NAV_ITEMS = [
   { key: 'activities', icon: <GiftOutlined />, label: '活动库' },
   { key: 'analytics', icon: <BarChartOutlined />, label: '观看统计' },
   { key: 'models', icon: <RobotOutlined />, label: 'AI 模型' },
+  { key: 'voice', icon: <AudioOutlined />, label: '家长声音' },
   { key: 'devices', icon: <DesktopOutlined />, label: '设备 / 配对' },
   { key: 'settings', icon: <SettingOutlined />, label: '设置' },
 ]
@@ -111,6 +114,7 @@ export default function App() {
           <Route path="/activities" element={<ActivitiesPage />} />
           <Route path="/analytics" element={<AnalyticsPage />} />
           <Route path="/models" element={<ModelsPage />} />
+          <Route path="/voice" element={<VoicePage />} />
           <Route path="/devices" element={<DevicesPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="/health" replace />} />

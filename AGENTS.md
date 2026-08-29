@@ -5,13 +5,14 @@
 ## 固定技术栈（不得更换）
 
 - Android TV：Kotlin + Jetpack Compose for TV + AndroidX Media3（HttpDataSource 注入自定义 Header）
-- TV 语音：AudioRecord，PCM16LE/16kHz/mono，仅 LISTENING/FOLLOW_UP 期间采集；TV TTS 用 Android 系统 TextToSpeech
+- TV 语音：AudioRecord，PCM16LE/16kHz/mono，仅 LISTENING/FOLLOW_UP 期间采集；TV TTS 默认 Android 系统 TextToSpeech（PRD TTS-006 回退兜底）
+- 可选克隆 TTS：独立 kindo-tts 容器（sherpa-onnx ZipVoice 零样本克隆，纯 CPU 离线，仅容器网络内可达；hub_tts 任何不可用回退系统 TTS，技术方案 §6.7）
 - Kindo Hub：Python + FastAPI + Pydantic + SQLAlchemy + Alembic，模块化单体；SQLite（WAL），必须在本地文件系统
 - Web Admin：React + TypeScript + Vite + Ant Design v6，构建产物静态并入 kindo-hub（admin_dist）
 - 媒体解析：ffprobe + FFmpeg CLI（仅扫描/探测/字幕抽取，不做实时转码）
 - ASR：独立 kindo-asr 容器（sherpa-onnx Paraformer 中文，离线）
 - LLM：内部 LLMProvider + openai_chat_completions Adapter
-- 部署：Docker Compose（kindo-hub + kindo-asr），amd64/arm64
+- 部署：Docker Compose（kindo-hub + kindo-asr，kindo-tts 可选），amd64/arm64
 
 ## 不可动摇的硬性约束（违反任何一条即返工）
 

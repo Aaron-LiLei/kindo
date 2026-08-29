@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import UTC
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Header, Request
+from fastapi import APIRouter, Depends, Header, Request, Response
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -328,6 +328,20 @@ def conversations_end(session_id: str, request: Request,
     state.conversation_manager.get_for_device(session_id, device.id)
     state.conversation_manager.end(session_id)
     return {"session_id": session_id, "state": "ended"}
+
+
+# ---------- TTS 音频拉取（§6.7 hub_tts） ----------
+
+@router.get("/tts/{tts_id}/audio")
+def tts_audio(tts_id: str, request: Request,
+              device: Device = Depends(device_from_request),
+              session: Session = Depends(get_db)):
+    """hub_tts 合成音频：tts_id 一次性短生命周期，未命中/过期 404（TV 回退系统 TTS）。"""
+    state = get_state(request)
+    wav = state.tts.get_audio(tts_id)
+    if wav is None:
+        raise not_found("TTS 音频不存在或已过期")
+    return Response(content=wav, media_type="audio/wav")
 
 
 # ---------- Playback（§3.1） ----------

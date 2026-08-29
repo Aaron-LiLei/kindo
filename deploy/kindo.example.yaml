@@ -33,3 +33,8 @@ llm_providers:
 # 本地 ASR Provider（kindo-asr 容器）
 asr:
   endpoint: "http://kindo-asr:8081"
+
+# 可选克隆 TTS（PRD TTS-005~007 / 技术方案 §6.7）：家长声音零样本克隆。
+# 模型放置与构建见 apps/kindo-tts/README.md；置空或不配置 = 不启用（始终系统 TTS）。
+tts:
+  endpoint: "http://kindo-tts:8092"

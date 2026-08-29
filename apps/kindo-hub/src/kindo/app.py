@@ -178,13 +178,22 @@ def create_app(cfg: Config | None = None) -> FastAPI:
     from .conversation.usage import ConversationUsageService
 
     conversation_usage = ConversationUsageService(db.session_factory)
-    manager = ConversationManager(cfg, usage=conversation_usage)
     tools = ToolRuntime(db.session_factory, policy_engine, playback, history)
     tools.set_notifier(realtime.emit)
     llm = OpenAIChatCompletionsAdapter(cfg.llm_connect_timeout, cfg.llm_first_event_timeout,
                                        cfg.llm_total_timeout)
-    tts = TtsService()
+    # 可选克隆 TTS（PRD TTS-005~007 / 技术方案 §6.7）：hub_tts 优先，android_tts 兜底
+    from .providers.tts import HubTtsClient
+    from .voice_profile import VoiceStore
+
+    voice_store = VoiceStore(cfg)
+    hub_tts = HubTtsClient(cfg.tts_endpoint, cfg.tts_timeout_seconds)
+    tts = TtsService(hub_tts=hub_tts, voice_store=voice_store)
     asr = AsrProviderClient(cfg.asr_endpoint, cfg.asr_timeout_seconds)
+    manager = ConversationManager(
+        cfg, usage=conversation_usage,
+        on_end=lambda s: tts.drop_tts(s.tts_to_session.keys()),
+    )
 
     from .admin.auth import AdminAuthService
     from .pairing import PairingService
@@ -353,6 +362,7 @@ def create_app(cfg: Config | None = None) -> FastAPI:
                 with contextlib.suppress(Exception):
                     zc.close()
             await asr.aclose()
+            await tts.aclose()
 
     app.router.lifespan_context = lifespan
     return app

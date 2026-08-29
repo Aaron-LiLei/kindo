@@ -180,15 +180,19 @@ def test_full_loop_search_play_grant(llm_env):
     with env.client.websocket_connect(f"/api/v1/realtime?token={token}") as ws:
         ws.send_json({"type": "hello", "last_server_seq": 0})
         env.state.orchestrator.on_transcript(conv, "我想看汪汪队")
-        events = pump(ws, stop_type="tts.request", timeout_s=15)
+        events = pump(ws, stop_type="assistant.text.final", timeout_s=20)
         types = [e["type"] for e in events]
 
         assert "tool.started" in types and "tool.completed" in types
         assert "assistant.text.delta" in types
         assert "assistant.text.final" in types
-        assert "tts.request" in types  # TTS 请求下发（TV 端执行 Android TTS）
-        tts_payload = next(e for e in events if e["type"] == "tts.request")["payload"]
-        assert tts_payload["provider"] == "android_tts"
+        tts_events = [e for e in events if e["type"] == "tts.request"]
+        assert tts_events  # TTS 请求下发（TV 端执行 Android TTS）
+        assert tts_events[-1]["payload"]["provider"] == "android_tts"
+        # 分句流式：final 必须在全部 tts.request 之后（TV 以 final 为收尾信号）
+        assert types.index("assistant.text.final") > max(
+            i for i, t in enumerate(types) if t == "tts.request"
+        )
 
         # 播放真实创建
         cur = env.client.get("/api/v1/playbacks/current", headers=headers).json()
@@ -203,8 +207,14 @@ def test_full_loop_search_play_grant(llm_env):
                     assert "grant" not in content.lower()
                     assert "/stream" not in content
 
-        # tts.finished → follow_up 状态事件
-        ws.send_json({"type": "tts.finished", "tts_id": tts_payload["tts_id"]})
+        # tts.finished → follow_up：分句流式下仅末句完成才开启追问窗口
+        ws.send_json({"type": "tts.finished", "tts_id": tts_events[0]["payload"]["tts_id"]})
+        mid = pump(ws, stop_type=None, timeout_s=2)
+        assert not any(
+            e["type"] == "conversation.state" and e["payload"]["state"] == "follow_up"
+            for e in mid
+        )
+        ws.send_json({"type": "tts.finished", "tts_id": tts_events[-1]["payload"]["tts_id"]})
         follow = pump(ws, stop_type=None, timeout_s=3)
         assert any(
             e["type"] == "conversation.state" and e["payload"]["state"] == "follow_up"
@@ -215,6 +225,84 @@ def test_full_loop_search_play_grant(llm_env):
     snap = env.client.get(f"/api/v1/conversations/{session_id}", headers=headers).json()
     assert snap["turns"][0]["user_input"] == "我想看汪汪队"
     assert "汪汪队" in snap["turns"][0]["assistant_output"]
+
+
+@requires_ffprobe
+@pytest.mark.slow
+def test_no_tts_request_after_session_ended(llm_env):
+    """孩子已结束会话（不聊了）时，编排中的迟到回复不再下发 tts.request（不盖在播放上）。"""
+    import threading
+
+    env, llm = llm_env
+    _d, token = env.pair_device()
+    headers = env.device_headers(token)
+
+    final_gate = threading.Event()
+
+    def resolver(body: dict) -> list[dict]:
+        last = _last_tool_result(body)
+        if last is None:
+            return [llm.tool_call("search_media", {"query": "汪汪队"}, tid="t1")]
+        # 第二轮：等测试先结束会话，再放行 final 文本
+        final_gate.wait(timeout=10)
+        return [llm.text("这句回复来得太晚，不应该被念出来")]
+
+    llm.resolver = resolver
+
+    r = env.client.post("/api/v1/conversations", json={}, headers=headers)
+    assert r.status_code == 200
+    session_id = r.json()["session_id"]
+    conv = env.state.conversation_manager.get(session_id)
+
+    with env.client.websocket_connect(f"/api/v1/realtime?token={token}") as ws:
+        ws.send_json({"type": "hello", "last_server_seq": 0})
+        env.state.orchestrator.on_transcript(conv, "我想看汪汪队")
+        pump(ws, stop_type="tool.completed", timeout_s=15)
+
+        r = env.client.post(f"/api/v1/conversations/{session_id}/end", headers=headers)
+        assert r.status_code == 200
+        final_gate.set()
+
+        tail = pump(ws, stop_type=None, timeout_s=4)
+        types = [e["type"] for e in tail]
+        assert "assistant.text.final" in types  # final 文本仍可送达（TV 端不可见）
+        assert "tts.request" not in types  # 但不再下发 TTS——会话已结束
+
+    assert env.state.conversation_manager.get_optional(session_id) is None
+
+
+@requires_ffprobe
+@pytest.mark.slow
+def test_streaming_tts_sentence_by_sentence(llm_env):
+    """分句流式 TTS：LLM 流式输出按句逐条下发 tts.request，尾句先行、final 收尾。"""
+    env, llm = llm_env
+    _d, token = env.pair_device()
+    headers = env.device_headers(token)
+
+    llm.script = [[llm.text("好的呀！给你放汪汪队。马上开始咯")]]
+    r = env.client.post("/api/v1/conversations", json={}, headers=headers)
+    assert r.status_code == 200
+    session_id = r.json()["session_id"]
+    conv = env.state.conversation_manager.get(session_id)
+
+    with env.client.websocket_connect(f"/api/v1/realtime?token={token}") as ws:
+        ws.send_json({"type": "hello", "last_server_seq": 0})
+        env.state.orchestrator.on_transcript(conv, "我想看汪汪队")
+        events = pump(ws, stop_type="assistant.text.final", timeout_s=15)
+
+    types = [e["type"] for e in events]
+    tts_events = [e for e in events if e["type"] == "tts.request"]
+    texts = [e["payload"]["text"] for e in tts_events]
+    assert texts == ["好的呀！", "给你放汪汪队。", "马上开始咯"]
+    # final 必须在全部 tts.request 之后（TV 以 final 为"播报队列已封闭"信号）
+    assert types.index("assistant.text.final") > max(
+        i for i, t in enumerate(types) if t == "tts.request"
+    )
+    final_text = next(e for e in events if e["type"] == "assistant.text.final")["payload"]["text"]
+    assert final_text == "好的呀！给你放汪汪队。马上开始咯"
+    # 回合完整可追溯
+    snap = env.client.get(f"/api/v1/conversations/{session_id}", headers=headers).json()
+    assert snap["turns"][0]["assistant_output"] == final_text
 
 
 @requires_ffprobe

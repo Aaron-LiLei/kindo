@@ -35,6 +35,11 @@ from .service import (
 
 logger = logging.getLogger("kindo.orchestrator")
 
+# 分句流式 TTS：LLM 流式输出按句切分逐句下发 tts.request，孩子先听为快。
+# 句读集合含换行；无句读超长时强制切分（防超长utterance卡住播报）。
+_SENTENCE_END_CHARS = "。！？!?；;\n"
+_TTS_MAX_BUFFER_CHARS = 100
+
 
 class Orchestrator:
     def __init__(
@@ -142,6 +147,8 @@ class Orchestrator:
             if s.state != STATE_ACTIVE or tts_id not in s.tts_to_session:
                 continue
             if event_kind == "finished":
+                if tts_id != s.last_tts_id:
+                    return  # 分句流式：中间句完成不开启追问窗口
                 s.follow_up_deadline = time.monotonic() + self._cfg.follow_up_seconds
                 self._emit_state(s, "follow_up")
                 self._submit(self._follow_up_timer(s))
@@ -188,6 +195,16 @@ class Orchestrator:
 
         had_side_effect = False
         emitted_text = False
+        speak_buffer = ""  # 已流式到达但尚未成句的待播文本
+
+        async def _flush_speak() -> None:
+            """把未成句的余量立即下发（回合切换/流结束时的尾句）。"""
+            nonlocal speak_buffer
+            text = speak_buffer.strip()
+            speak_buffer = ""
+            if text:
+                await self._speak(conv, text)
+
         for _round in range(MAX_LLM_TOOL_ROUNDS + 1):
             request_id = new_id()
             text_parts: list[str] = []
@@ -206,6 +223,21 @@ class Orchestrator:
                             {"delta": ev.text}, session_id=conv.session_id,
                             correlation_id=request_id,
                         )
+                        # 分句流式：句读到达即下发该句
+                        speak_buffer += ev.text
+                        while True:
+                            idx = -1
+                            for ch in _SENTENCE_END_CHARS:
+                                pos = speak_buffer.find(ch)
+                                if pos != -1 and (idx == -1 or pos < idx):
+                                    idx = pos
+                            if idx == -1:
+                                break
+                            sentence, speak_buffer = speak_buffer[:idx + 1], speak_buffer[idx + 1:]
+                            if sentence.strip():
+                                await self._speak(conv, sentence.strip())
+                        if len(speak_buffer) >= _TTS_MAX_BUFFER_CHARS:
+                            await _flush_speak()
                     elif ev.type == "tool_call_delta":
                         events.append(ev)
                     elif ev.type == "error":
@@ -228,6 +260,8 @@ class Orchestrator:
             assistant_text = "".join(text_parts)
 
             if tool_calls and _round < MAX_LLM_TOOL_ROUNDS:
+                # 工具轮的过渡文本立即播报（"让我找找…"），随后执行工具
+                await _flush_speak()
                 if assistant_text:
                     messages.append({"role": "assistant", "content": assistant_text,
                                      "tool_calls": _openai_tool_calls(tool_calls)})
@@ -257,16 +291,19 @@ class Orchestrator:
                     })
                 continue  # 把 Tool 结果送回 LLM
 
-            # 最终回复
+            # 最终回复：尾句先于 assistant.text.final 下发（TV 以 final 作为
+            # "本回合 tts.request 已发完"的信号驱动追问窗口）
             final = assistant_text or "（AI 没有说话）"
             turn.assistant_output = final
             conv.touch()
+            await _flush_speak()
+            if not assistant_text:
+                await self._speak(conv, final)
             self._realtime.emit(
                 conv.device_id, "assistant.text.final",
                 {"text": final, "response_id": request_id},
                 session_id=conv.session_id, correlation_id=request_id,
             )
-            await self._speak(conv, final)
             return
 
         self._fail(conv, turn, "error", "这个问题有点难，我们换个说法试试好吗？")
@@ -296,10 +333,19 @@ class Orchestrator:
         )
 
     async def _speak(self, conv: ConversationSession, text: str) -> None:
-        """tts.request 下发 TV Android TTS 执行；由 tts.* 事件驱动 FOLLOW_UP（§11.4）。"""
+        """tts.request 下发 TV Android TTS 执行；由 tts.* 事件驱动 FOLLOW_UP（§11.4）。
+
+        分句流式：一回合并发多条 tts.request，conv.last_tts_id 记录末句——
+        TV 逐句回报 tts.finished，仅末句完成才开启追问窗口。"""
+        if conv.state != STATE_ACTIVE:
+            # 会话已被家长/孩子结束（不聊了/端点关闭）：迟到的响应不再下发，
+            # 避免 TTS 盖在 TV 已开始的播放上
+            return
         tts_id = new_id()
         conv.tts_to_session[tts_id] = conv.session_id
-        instruction = self._tts.render(tts_id, text)
+        conv.last_tts_id = tts_id
+        # §6.7：hub_tts（家长声音克隆，可选）优先按句合成；失败/冷却/未配置回退 android_tts
+        instruction = await self._tts.render(tts_id, text)
         self._emit_state(conv, "speaking")
         self._realtime.emit(
             conv.device_id, "tts.request", instruction.to_payload(),

@@ -100,6 +100,12 @@ class Config:
         # compose 部署将该文件只读共享给 kindo-asr）
         self.asr_hotwords_out: str = str(asr.get("hotwords_out", "") or "")
 
+        # 可选克隆 TTS（PRD TTS-005~007 / 技术方案 §6.7）：kindo-tts 容器 endpoint；
+        # 空 = 不启用（始终 Android 系统 TTS，任何不可用自动回退）
+        tts = raw.get("tts", {})
+        self.tts_endpoint: str = str(tts.get("endpoint", "") or "")
+        self.tts_timeout_seconds: float = float(tts.get("timeout_seconds", 20.0))
+
         self.llm_connect_timeout: int = int(raw.get("llm_connect_timeout_seconds", 5))
         self.llm_first_event_timeout: int = int(raw.get("llm_first_event_timeout_seconds", 15))
         self.llm_total_timeout: int = int(raw.get("llm_total_timeout_seconds", 30))

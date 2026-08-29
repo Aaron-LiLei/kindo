@@ -65,6 +65,18 @@ class HubClient {
 
     fun posterUrl(mediaId: String): String = "$baseUrl/api/v1/media/$mediaId/poster"
 
+    /**
+     * hub_tts 合成音频同步拉取（技术方案 §6.7）。在播放工作线程内调用；
+     * 非 200 或网络异常返回 null（调用方回退系统 TTS）。
+     */
+    fun ttsAudioBlocking(path: String): ByteArray? = try {
+        http.newCall(authBuilder(path).build()).execute().use { resp ->
+            if (resp.code == 200) resp.body?.bytes() else null
+        }
+    } catch (e: Exception) {
+        null
+    }
+
     private fun authBuilder(path: String): Request.Builder =
         Request.Builder().url("$baseUrl$path").header("Authorization", "Bearer $deviceToken")
 

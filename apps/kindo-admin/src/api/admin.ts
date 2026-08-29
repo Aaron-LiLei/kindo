@@ -27,6 +27,7 @@ import type {
   ProviderTestResp,
   ScanJob,
   ScanJobsResp,
+  VoiceProfileResp,
 } from '../types/admin'
 
 function toQuery(params: Record<string, string | number | undefined>): string {
@@ -258,6 +259,23 @@ export const adminApi = {
   /** v0.3 Policy 今日剩余预览 */
   policyUsage: () =>
     api.get('/api/v1/admin/policy/usage') as Promise<import('../types/admin').PolicyUsage>,
+
+  // ---------- 家长声音（PRD TTS-005~007；UI 不出现"克隆/声纹"等内部术语） ----------
+  voiceProfile: () => api.get('/api/v1/admin/voice-profile') as Promise<VoiceProfileResp>,
+  /** FormData 走 PUT（audio 文件 + prompt_text），浏览器自动设置 multipart boundary */
+  voiceProfileUpload: (audio: Blob, promptText: string) => {
+    const form = new FormData()
+    form.append('audio', audio, 'recording.webm')
+    form.append('prompt_text', promptText)
+    return api.put('/api/v1/admin/voice-profile', form) as Promise<VoiceProfileResp>
+  },
+  voiceProfileDelete: () =>
+    api.delete('/api/v1/admin/voice-profile') as Promise<{
+      deleted: boolean
+      clone_ready: boolean
+    }>,
+  /** 样本回放地址（同源 Cookie 认证，audio 标签直接可用；query 为缓存失效戳） */
+  voiceProfileAudioUrl: () => '/api/v1/admin/voice-profile/audio',
 
   devices: () => api.get('/api/v1/admin/devices') as Promise<{ devices: Device[] }>,
   deviceRevoke: (deviceId: string) => api.post(`/api/v1/admin/devices/${deviceId}/revoke`),

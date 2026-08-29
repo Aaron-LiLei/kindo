@@ -33,8 +33,9 @@ secret.key
 ADMIN_BOOTSTRAP_TOKEN
 backups/
 
-# ASR 模型大文件（下载方式见 README）
+# ASR/克隆 TTS 模型大文件（下载方式见各 README）
 apps/kindo-asr/model/
+apps/kindo-tts/model/
 
 # IDE / OS
 .idea/

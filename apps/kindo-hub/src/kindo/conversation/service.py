@@ -53,6 +53,7 @@ class ConversationSession:
     current_topic: str | None = None
     follow_up_deadline: float | None = None
     tts_to_session: dict = field(default_factory=dict)  # tts_id -> session_id（TTS 生命周期映射）
+    last_tts_id: str | None = None  # 分句流式：最近下发的 tts（仅末句完成才开追问窗口）
 
     def touch(self) -> None:
         self.last_activity_at = datetime.now(UTC)
@@ -73,10 +74,12 @@ class ConversationManager:
     Turn 串行化由 Orchestrator 的 per-session 锁负责。
     """
 
-    def __init__(self, cfg: Config, usage=None):
+    def __init__(self, cfg: Config, usage=None, on_end=None):
         self._cfg = cfg
         # 可选计量钩子（ConversationUsageService；ai_voice 预算闭环，2026-08-26）
         self._usage = usage
+        # 可选会话结束钩子（如 TTS 音频缓存按会话清理，技术方案 §6.7）
+        self._on_end = on_end
         self._sessions: dict[str, ConversationSession] = {}
         self._lock = threading.Lock()
 
@@ -123,6 +126,8 @@ class ConversationManager:
                 s.state = STATE_ENDED
         if s is not None and self._usage is not None:
             self._usage.record_end(s)
+        if s is not None and self._on_end is not None:
+            self._on_end(s)
 
     def all_sessions(self) -> list[ConversationSession]:
         with self._lock:

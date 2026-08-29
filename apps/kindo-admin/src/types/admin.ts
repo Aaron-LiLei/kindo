@@ -553,3 +553,25 @@ export interface AiApplyResult {
   policy_version?: number
   revoked_playbacks?: number
 }
+
+/** 家长声音样本（/admin/voice-profile；PRD TTS-005~007，UI 不出现"克隆/声纹"等内部术语）。 */
+export interface VoiceProfileState {
+  configured: boolean
+  duration_seconds?: number
+  sample_rate?: number
+  prompt_text?: string
+}
+
+export interface VoiceProfileResp {
+  configured: boolean
+  voice_profile: VoiceProfileState
+  clone_ready: boolean
+  in_cooldown: boolean
+  tts_service: {
+    status: string
+    ready: boolean
+    voice_loaded: boolean
+    error?: string | null
+  }
+  note?: string
+}

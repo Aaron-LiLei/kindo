@@ -6,7 +6,7 @@ import asyncio
 import logging
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, File, Form, Request, Response, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -1596,6 +1596,80 @@ def asr_hotwords_rebuild(request: Request, session: Session = Depends(get_db),
     out = asr_words.write_hotwords(state.config, session)
     out["note"] = "重建完成；重启 kindo-asr 容器后生效（热词在识别器初始化时加载）"
     return out
+
+
+# ---------- 家长声音（PRD TTS-005~007 / 技术方案 §6.7 hub_tts） ----------
+
+def _voice_store(request: Request):
+    from ..voice_profile import VoiceStore
+
+    return VoiceStore(get_state(request).config)
+
+
+@router.get("/voice-profile")
+async def voice_profile_get(request: Request, _admin=Depends(require_admin_read)):
+    """样本状态 + kindo-tts 健康态与克隆可用态（不回传样本音频本体）。"""
+    state = get_state(request)
+    out = state.tts.clone_status()
+    out["tts_service"] = await state.tts.remote_health()
+    return out
+
+
+@router.get("/voice-profile/audio")
+def voice_profile_audio(request: Request, _admin=Depends(require_admin_read)):
+    """样本试听（管理后台播放器用；仅家庭网络内传输）。"""
+    from fastapi.responses import Response
+
+    store = _voice_store(request)
+    wav = store.wav_bytes()
+    if wav is None:
+        raise not_found("尚未录入家长声音样本")
+    return Response(content=wav, media_type="audio/wav")
+
+
+@router.put("/voice-profile")
+async def voice_profile_put(request: Request,
+                            audio: UploadFile = File(...),
+                            prompt_text: str = Form(...),
+                            _admin=Depends(require_admin_write)):
+    """上传/替换样本：浏览器录音（webm/opus 等）经 ffmpeg 转码校验（3~15s）后落盘。"""
+    import asyncio
+
+    from ..errors import invalid_request
+    from ..voice_profile import VoicePromptError
+
+    text = (prompt_text or "").strip()
+    if not text:
+        raise invalid_request("prompt_text 不能为空（须与朗读文本逐字一致）")
+    raw = await audio.read()
+    if not raw:
+        raise invalid_request("录音为空")
+    if len(raw) > 10 * 1024 * 1024:
+        raise invalid_request("录音文件过大（>10MB）")
+    store = _voice_store(request)
+    state = get_state(request)
+    try:
+        profile = await asyncio.to_thread(store.save, raw, text, state.config.ffmpeg_path)
+    except VoicePromptError as exc:
+        raise invalid_request(str(exc)) from exc
+    # 样本变更：失效推送缓存；健康探测/下次合成时自动重推 kindo-tts
+    state.tts.invalidate_voice()
+    out = state.tts.clone_status()
+    out["voice_profile"] = profile.public()
+    out["tts_service"] = await state.tts.remote_health()
+    out["note"] = "样本已保存；克隆播报在 kindo-tts 就绪后自动生效"
+    return out
+
+
+@router.delete("/voice-profile")
+async def voice_profile_delete(request: Request, _admin=Depends(require_admin_write)):
+    """删除样本并尽力同步清除 kindo-tts 内存声纹（PRD TTS-007：删除即时生效）。"""
+    state = get_state(request)
+    store = _voice_store(request)
+    removed = store.delete()
+    state.tts.invalidate_voice()
+    await state.tts.purge_remote_voice()
+    return {"deleted": removed, "clone_ready": False}
 
 
 # ---------- Analytics ----------

@@ -50,6 +50,13 @@ class KindoTts(context: Context) {
                             mainHandler.post { callbacks.remove(cb)?.invoke("interrupted") }
                         }
                     }
+
+                    override fun onStop(utteranceId: String?, interrupted: Boolean) {
+                        // stop() 会清空排队中的分句：逐句回收回调，避免泄漏与幽灵回调
+                        utteranceId?.let { cb ->
+                            mainHandler.post { callbacks.remove(cb)?.invoke("interrupted") }
+                        }
+                    }
                 })
             }
         }
@@ -64,7 +71,9 @@ class KindoTts(context: Context) {
             return
         }
         callbacks[ttsId] = onEvent
-        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, ttsId)
+        // 分句流式（技术方案 §11.4）：一回合并发多条 tts.request，逐句排队播报；
+        // 打断用 stop() 显式清空队列，不能在此 FLUSH（会掐掉上一句）
+        tts?.speak(text, TextToSpeech.QUEUE_ADD, null, ttsId)
     }
 
     fun stop() {
