@@ -32,6 +32,8 @@ logger = logging.getLogger("kindo-tts")
 
 # 单句上限（技术方案 §6.7）：Hub 分句缓冲 ≤100 字符，这里放宽到 200 兜底
 _MAX_TEXT_CHARS = 200
+# 输出时长上限：超限 422（Hub 回退系统 TTS）——防异常长文本拖垮单句合成
+_MAX_OUTPUT_SECONDS = 30.0
 # 参考音频时长边界（秒）：过短克隆不像，过长拖慢推理且降低质量（ZipVoice 建议 <10s）
 _MIN_PROMPT_SECONDS = 2.0
 _MAX_PROMPT_SECONDS = 20.0
@@ -245,6 +247,10 @@ def synthesize(body: SynthesisBody) -> Response:
             logger.warning("合成失败 tts_id=%s: %s", body.tts_id[:8], exc)
             raise HTTPException(500, detail="synthesis_failed") from exc
     duration = samples.size / _SAMPLE_RATE
+    if duration > _MAX_OUTPUT_SECONDS:
+        logger.warning("tts_id=%s 输出 %.1fs 超上限 %ds", body.tts_id[:8],
+                       duration, int(_MAX_OUTPUT_SECONDS))
+        raise HTTPException(422, detail="synthesis_too_long")
     logger.info("tts_id=%s text=%d字 audio=%.2fs gen=%.2fs rtf=%.2f",
                 body.tts_id[:8], len(text), duration, time.time() - t0,
                 (time.time() - t0) / max(duration, 0.01))

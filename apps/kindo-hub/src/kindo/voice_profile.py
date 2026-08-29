@@ -108,7 +108,10 @@ class VoiceStore:
                 "-ac", "1", "-ar", str(_SAMPLE_RATE), "-sample_fmt", "s16",
                 str(out_path),
             ]
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            try:
+                proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            except OSError as exc:
+                raise VoicePromptError(f"ffmpeg 不可用（{exc}）；请检查部署环境 tools.ffmpeg_path") from exc
             if proc.returncode != 0 or not out_path.is_file():
                 raise VoicePromptError(f"音频转码失败: {proc.stderr.strip()[:200]}")
             with wave.open(str(out_path), "rb") as w:

@@ -8,6 +8,7 @@ v0.3.6 增补 hub_tts（PRD TTS-005~007）：家长声音样本存在且 kindo-t
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from collections import OrderedDict
 from dataclasses import dataclass
@@ -119,17 +120,22 @@ class TtsService:
         self._consecutive_failures = 0
         self._cooldown_until = 0.0
         self._pushed_fingerprint: str | None = None
+        # render 在编排工作循环、get_audio/drop_tts/invalidate_voice 在 FastAPI
+        # 线程池——共享可变状态必须持锁（锁绝不跨越 await）
+        self._state_lock = threading.Lock()
 
     @property
     def hub_tts_configured(self) -> bool:
         return self._hub_tts is not None and self._hub_tts.configured
 
     def _clone_available(self) -> bool:
+        with self._state_lock:
+            in_cooldown = time.monotonic() < self._cooldown_until
         return (
             self.hub_tts_configured
             and self._voice_store is not None
             and self._voice_store.exists()
-            and time.monotonic() >= self._cooldown_until
+            and not in_cooldown
         )
 
     async def render(self, tts_id: str, text: str, locale: str | None = None,
@@ -139,16 +145,19 @@ class TtsService:
             try:
                 wav = await self._synthesize_with_voice(tts_id, text)
             except Exception as exc:
-                self._consecutive_failures += 1
-                if self._consecutive_failures >= self._BREAK_AFTER_FAILURES:
-                    self._cooldown_until = time.monotonic() + self._BREAK_COOLDOWN_SECONDS
-                    self._consecutive_failures = 0
+                with self._state_lock:
+                    self._consecutive_failures += 1
+                    failures = self._consecutive_failures
+                    if failures >= self._BREAK_AFTER_FAILURES:
+                        self._cooldown_until = time.monotonic() + self._BREAK_COOLDOWN_SECONDS
+                        self._consecutive_failures = 0
                 logger.warning("hub_tts 合成失败，本句回退系统 TTS（连续失败 %d）: %s",
-                               self._consecutive_failures, exc)
+                               failures, exc)
             else:
-                self._consecutive_failures = 0
-                self._audio[tts_id] = (wav, time.monotonic() + self._AUDIO_TTL_SECONDS)
-                self._trim_audio()
+                with self._state_lock:
+                    self._consecutive_failures = 0
+                    self._audio[tts_id] = (wav, time.monotonic() + self._AUDIO_TTL_SECONDS)
+                    self._trim_audio()
                 return TtsRenderInstruction(
                     provider=self.HUB_TTS_PROVIDER, tts_id=tts_id, text=text,
                     locale=locale, voice_hint=voice_hint,
@@ -172,22 +181,25 @@ class TtsService:
     # ---------- 音频缓存（TV 拉取） ----------
 
     def get_audio(self, tts_id: str) -> bytes | None:
-        entry = self._audio.get(tts_id)
-        if entry is None:
-            return None
-        wav, expires = entry
-        if time.monotonic() > expires:
-            self._audio.pop(tts_id, None)
-            return None
-        self._audio.move_to_end(tts_id)
-        return wav
+        with self._state_lock:
+            entry = self._audio.get(tts_id)
+            if entry is None:
+                return None
+            wav, expires = entry
+            if time.monotonic() > expires:
+                self._audio.pop(tts_id, None)
+                return None
+            self._audio.move_to_end(tts_id)
+            return wav
 
     def drop_tts(self, tts_ids) -> None:
         """会话结束即清（§6.7）：丢弃该会话全部缓存音频。"""
-        for tts_id in tts_ids:
-            self._audio.pop(tts_id, None)
+        with self._state_lock:
+            for tts_id in tts_ids:
+                self._audio.pop(tts_id, None)
 
     def _trim_audio(self) -> None:
+        # 调用方持有 _state_lock
         now = time.monotonic()
         for tts_id in [k for k, (_, exp) in self._audio.items() if now > exp]:
             self._audio.pop(tts_id, None)
@@ -198,9 +210,10 @@ class TtsService:
 
     def invalidate_voice(self) -> None:
         """样本变更/删除后失效推送缓存与熔断（下次 render 重推或回退）。"""
-        self._pushed_fingerprint = None
-        self._consecutive_failures = 0
-        self._cooldown_until = 0.0
+        with self._state_lock:
+            self._pushed_fingerprint = None
+            self._consecutive_failures = 0
+            self._cooldown_until = 0.0
 
     async def remote_health(self) -> dict:
         """kindo-tts 健康探测（Admin 展示用；未配置返回 not_configured）。"""
@@ -222,11 +235,13 @@ class TtsService:
         """Admin 可见态：是否可克隆（样本+配置+熔断）。"""
         store = self._voice_store
         profile = store.load() if store is not None else None
+        with self._state_lock:
+            in_cooldown = time.monotonic() < self._cooldown_until
         return {
             "configured": self.hub_tts_configured,
             "voice_profile": profile.public() if profile else {"configured": False},
             "clone_ready": bool(self._clone_available()),
-            "in_cooldown": time.monotonic() < self._cooldown_until,
+            "in_cooldown": in_cooldown,
         }
 
     async def aclose(self) -> None:
