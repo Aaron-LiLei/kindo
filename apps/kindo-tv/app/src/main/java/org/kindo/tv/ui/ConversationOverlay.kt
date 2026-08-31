@@ -2,6 +2,7 @@ package org.kindo.tv.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
@@ -16,10 +17,15 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -194,16 +200,38 @@ private fun TransitionOverlayContent(viewModel: AppViewModel, t: org.kindo.tv.Tr
                         color = KindoColors.textPrimary, fontSize = 30.sp,
                         fontWeight = FontWeight.Bold, textAlign = TextAlign.Center,
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                    // offer 出现即接管焦点到第一个选项：浮层覆盖底层页面但不抢
+                    // 焦点的放任实现会让 D-pad 继续驱动被遮住的底层页面，遥控
+                    // 选不了选项（UX 视觉审查 2026-08-31 实测）。请求直接指向
+                    // 首个 KidButton 的 focusRequester，但需延迟一帧——LazyRow
+                    // 子项在布局阶段才组合，过早请求会被静默吞掉
+                    val optionRow = remember { FocusRequester() }
+                    LaunchedEffect(t.options.size) {
+                        if (t.options.isNotEmpty()) {
+                            // LazyRow 子项在布局阶段才子组合，等一帧再请求才
+                            // 有可聚焦目标（无延迟时静默落空）
+                            delay(150)
+                            runCatching { optionRow.requestFocus() }
+                        }
+                    }
+                    // 横向滚动 + 首尾留白：长标签（含主题后缀）不再把第三按钮
+                    // 挤成逐字竖排窄条、进而把"不聊了"塌缩出屏幕
+                    // （UX 视觉审查 2026-08-31；与对话澄清候选行同模式，审计 P3-13）
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(18.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp),
+                    ) {
                         val optColors = listOf(
                             KindoColors.accent, KindoColors.kidBlue, KindoColors.kidGreen)
-                        t.options.forEachIndexed { i, opt ->
+                        itemsIndexed(t.options) { i, opt ->
                             KidButton(
                                 emoji = transitionEmoji(opt.type),
                                 text = opt.label,
                                 onClick = { viewModel.selectTransitionOption(opt.type) },
                                 container = optColors[i % optColors.size],
                                 fontSize = 22,
+                                modifier = if (i == 0) Modifier.focusRequester(optionRow)
+                                           else Modifier,
                             )
                         }
                     }

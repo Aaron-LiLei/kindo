@@ -66,8 +66,11 @@ private fun Modifier.kidFocusVisual(): Modifier = composed {
         if (focused) Color(0x33250F00) else Color.Transparent, label = "focusShadow")
     this
         .scale(scale)
-        .shadow(10.dp, shape = RoundedCornerShape(24.dp), ambientColor = softShadow,
-                spotColor = softShadow)
+        // shadow 默认 clip=elevation>0.dp：会把后面 drawBehind 画在边界外的
+        // 金环/光晕裁掉——§4.7 焦点金环自视觉 v2 起实际从未渲染（UX 视觉
+        // 审查 2026-08-31 定位：缩放生效但全 App 无一处金环），必须显式关裁切
+        .shadow(10.dp, shape = RoundedCornerShape(24.dp), clip = false,
+                ambientColor = softShadow, spotColor = softShadow)
         // 焦点环画在边界外侧：Modifier.border 向内绘制，5dp 金环 + 9dp 光晕
         // 会盖住卡片左缘，把标题第一个字压掉（2026-08-27 修复记录（"最前面的
         // 字被切割"）；外移后聚焦不再遮挡任何内容
@@ -121,6 +124,8 @@ fun KidButton(
     fontSize: Int = 24,
 ) {
     Box(
+        // tvClickable 必须在最外层：Modifier.shadow 默认 clip=elevation>0.dp，
+        // 放在焦点视觉之外会把边界外的金环/光晕裁掉（UX 视觉审查 2026-08-31）
         modifier = modifier
             .tvClickable(onClick = onClick)
             .shadow(7.dp, shape = PillShape, ambientColor = Color(0x2E000000),
