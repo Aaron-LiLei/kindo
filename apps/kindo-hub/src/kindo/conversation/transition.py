@@ -305,7 +305,10 @@ class TransitionOrchestrator:
 
     def _build_options(self, session: Session, rules, ev: dict) -> list[dict]:
         """≤3 个选项：优先与刚播内容主题相关（有音频内容→song_story；
-        活动库有匹配→离屏类；其余 knowledge/quiz）。附"不聊了"由 TV 端常驻。"""
+        活动库有匹配→离屏类；其余 knowledge/quiz）。附"不聊了"由 TV 端常驻。
+
+        兴趣反哺（REC-002）：查找池 = 刚播主题 ∪ 近期兴趣主题——孩子反复
+        接触的主题即使与刚播内容不同，也能在接力中找到相关故事/活动。"""
         payload = ev.get("payload") or {}
         media_id = payload.get("media_id")
         topics: list[str] = []
@@ -320,28 +323,52 @@ class TransitionOrchestrator:
                 .all()
             )
             topics = [r[0] for r in rows]
+        interest = self._interest_topics(session, ev["profile_id"])
+        find_topics = topics + [t for t in interest if t not in topics]
         allowed = rules.transition_types()
         out: list[dict] = []
-        # 相关音频内容 → song_story 优先
-        if "song_story" in allowed and self._find_audio(session, topics):
-            out.append({"type": "song_story", "topics": topics})
+        # 相关音频内容 → song_story 优先（刚播主题 ∪ 兴趣主题）
+        if "song_story" in allowed and self._find_audio(session, find_topics):
+            out.append({"type": "song_story", "topics": find_topics})
         # 活动库匹配 → 离屏
         activity = None
         if {"offscreen_game", "real_explore"} & set(allowed):
-            activity = self._find_activity(session, topics)
+            activity = self._find_activity(session, find_topics)
         if activity is not None:
-            out.append({"type": "real_explore", "topics": topics,
+            out.append({"type": "real_explore", "topics": find_topics,
                         "activity_id": activity.id})
         for t in ("knowledge", "quiz", "roleplay", "vocabulary"):
             if t in allowed and len(out) < 3:
-                out.append({"type": t, "topics": topics})
+                out.append({"type": t, "topics": find_topics})
             if len(out) >= 3:
                 break
         for o in out:
             o["label"] = TYPE_LABELS.get(o["type"], o["type"])
-            if o["topics"]:
-                o["label"] = f"{o['label']}（{o['topics'][0]}）"
+            label_topic = topics or interest  # 选项标签优先刚播主题，无则用兴趣主题
+            if label_topic:
+                o["label"] = f"{o['label']}（{label_topic[0]}）"
         return out[:3]
+
+    @staticmethod
+    def _interest_topics(session: Session, profile_id: str, limit: int = 3) -> list[str]:
+        """孩子近 30 天兴趣主题 Top-N（客观信号聚合：entity 信号 → 实体主题，
+        transition_rejected 不计；只聚合引用，不写推断结论）。"""
+        from sqlalchemy import func
+
+        cutoff = datetime.now(UTC) - timedelta(days=30)
+        rows = (
+            session.query(ContentTopic.name, func.count(InterestSignal.id))
+            .join(EntityTopic, EntityTopic.entity_id == InterestSignal.entity_id)
+            .join(ContentTopic, ContentTopic.id == EntityTopic.topic_id)
+            .filter(InterestSignal.profile_id == profile_id,
+                    InterestSignal.created_at >= cutoff,
+                    InterestSignal.signal_type != "transition_rejected")
+            .group_by(ContentTopic.name)
+            .order_by(func.count(InterestSignal.id).desc())
+            .limit(limit)
+            .all()
+        )
+        return [r[0] for r in rows]
 
     def _find_audio(self, session: Session, topics: list[str]):
         q = (session.query(ContentEntity)
@@ -454,7 +481,8 @@ class TransitionOrchestrator:
         if media is None:
             return
         pb, decision, token = self._playback.request_playback(
-            session, device, media, "play", 0, "ai", None)
+            session, device, media, "play", 0, "ai", None,
+            interest_source="transition")  # 兴趣信号来源=接力（ANA-007）
         if not decision.allowed:
             # AUDIO 预算不足 → 温和收尾（不绕过 Policy）
             self._notify(device_id, "transition.state", {

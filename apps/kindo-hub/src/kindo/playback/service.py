@@ -21,6 +21,7 @@ from ..history.service import HistoryService
 from ..models import (
     AppSetting,
     Device,
+    InterestSignal,
     Media,
     Playback,
     PlaybackEvent,
@@ -30,6 +31,9 @@ from ..models import (
 from ..policy.engine import PolicyDecision, PolicyEngine
 from ..security import sha256_hex
 from ..util import new_id, new_opaque_token
+
+# 兴趣信号来源映射（ANA-007：浏览/AI/接力）：Playback.source(ui|ai) → interest source
+_INTEREST_SOURCE_MAP = {"ui": "browse", "ai": "ai"}
 
 _MIME_BY_EXT = {
     ".mp4": "video/mp4", ".m4v": "video/mp4",
@@ -99,8 +103,12 @@ class PlaybackService:
         start_position_ms: int | None,
         source: str,
         idempotency_key: str | None,
+        interest_source: str | None = None,
     ) -> tuple[Playback | None, PolicyDecision, str | None]:
-        """返回 (playback|None, decision, grant_token|None)。deny 时不建立 active playback。"""
+        """返回 (playback|None, decision, grant_token|None)。deny 时不建立 active playback。
+
+        interest_source：兴趣信号来源覆盖（ANA-007 接力路由传 "transition"），
+        缺省按 source 映射（ui→browse / ai→ai）。"""
         if action not in ("play", "resume", "next", "course_continue"):
             raise invalid_request(f"非法 action: {action}")
         if media.missing:
@@ -189,6 +197,9 @@ class PlaybackService:
         session.add(pb)
         session.flush()
         token = self._issue_grant(session, pb, decision.policy_version)
+        # 兴趣信号：选择即记录（ANA-007 内容来源 browse/ai/transition）
+        self._record_interest(session, profile_id, media.id, "selected",
+                               interest_source or source)
 
         if idem_key:
             session.merge(AppSetting(key=idem_key, value_json={
@@ -347,6 +358,8 @@ class PlaybackService:
             self._revoke_grants(session, pb.id)
             pb.ended_at = now
             if kind == "ended":
+                self._record_interest(session, pb.profile_id, pb.media_id,
+                                      "watched", pb.source)
                 self._publish_boundary_on_ended(session, pb, now)
 
     # ---------- viewing_interval ----------
@@ -390,6 +403,26 @@ class PlaybackService:
                 session, pb.profile_id, media, pb.position_ms, add_watched_ms=0,
                 ended=False, entity_id=pb.entity_id,
             )
+
+    def _record_interest(self, session: Session, profile_id: str, media_id: str,
+                         signal_type: str, source: str | None) -> None:
+        """兴趣信号客观记录（ANA-007）：selected（选择播放）/ watched（自然看完）；
+        只存 entity 引用与来源（browse/ai/transition），失败不影响播放主流程。"""
+        try:
+            from ..models import ContentEntity
+
+            entity_id = (
+                session.query(ContentEntity.id)
+                .filter(ContentEntity.source_media_id == media_id)
+                .limit(1)
+            ).scalar()
+            session.add(InterestSignal(
+                id=new_id(), profile_id=profile_id, entity_id=entity_id,
+                signal_type=signal_type,
+                source=_INTEREST_SOURCE_MAP.get(source or "", source) or "browse",
+            ))
+        except Exception:
+            logger.exception("兴趣信号记录失败（不影响主流程）")
 
     # ---------- Grant ----------
 

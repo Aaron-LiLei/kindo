@@ -1,17 +1,18 @@
 """TV / Hub 资源与命令接口（技术方案 §3.1）。"""
 from __future__ import annotations
 
-from datetime import UTC
+from datetime import UTC, timedelta
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Header, Request, Response
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..errors import grant_invalid, invalid_request, not_found, policy_denied
 from ..media.catalog import admin_collections, get_media, list_media, media_detail
-from ..models import Device, Media, Playback, SubtitleSegment, SubtitleTrack
+from ..models import ContentEntity, Device, InterestSignal, Media, Playback, SubtitleSegment, SubtitleTrack
 from ..util import now_iso, now_utc
 from .deps import RangeUnsatisfiable, device_from_request, get_db, get_state, parse_range_header
 
@@ -88,6 +89,42 @@ def home(request: Request, device: Device = Depends(device_from_request),
             for t in (m.tags_json or {}).get("themes", []):
                 if t not in themes:
                     themes.append(t)
+    # 兴趣反哺（REC-002/ANA-004）：可探索主题按孩子近 30 天兴趣信号频次前置
+    # 排序（selected/watched/transition_joined 客观计数；transition_rejected 不计；
+    # 同频次保持原序）——表述为使用行为排序，不引入推断标签
+    from datetime import datetime
+
+    cutoff = datetime.now(UTC) - timedelta(days=30)
+    visible_ids = [m.id for m in medias if visible(m)]
+    ent_rows = (
+        session.query(ContentEntity.id, ContentEntity.source_media_id)
+        .filter(ContentEntity.source_media_id.in_(visible_ids))
+        .all()
+        if visible_ids else []
+    )
+    ent_counts: dict[str, int] = {}
+    if ent_rows:
+        rows = (
+            session.query(InterestSignal.entity_id, func.count(InterestSignal.id))
+            .filter(InterestSignal.profile_id == profile_id,
+                    InterestSignal.entity_id.in_([e for e, _m in ent_rows]),
+                    InterestSignal.created_at >= cutoff,
+                    InterestSignal.signal_type != "transition_rejected")
+            .group_by(InterestSignal.entity_id)
+            .all()
+        )
+        ent_counts = {eid: int(cnt) for eid, cnt in rows}
+    media_to_ent = {mid: eid for eid, mid in ent_rows}
+    theme_weight: dict[str, int] = {}
+    for m in medias:
+        if not visible(m):
+            continue
+        weight = ent_counts.get(media_to_ent.get(m.id, ""), 0)
+        if weight:
+            for t in (m.tags_json or {}).get("themes", []):
+                theme_weight[t] = theme_weight.get(t, 0) + weight
+    if theme_weight:
+        themes.sort(key=lambda t: -theme_weight.get(t, 0))
     # 断点行按媒介拆分（交互 §4.2：继续观看 / 继续收听分列，音频不混入视频行）
     continue_all = [i for i in state.history.continue_watching(session, profile_id, limit=30)
                     if _visible_by_id(session, i["media_id"], visible)]
