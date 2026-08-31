@@ -160,5 +160,10 @@ def test_transition_options_weighted_by_interest(env):
     song = next(o for o in payload["options"] if o["type"] == "song_story")
     # 查找池 = 刚播主题(救援/合作) ∪ 兴趣主题(海洋)；音频实体经兴趣主题命中
     assert "海洋" in song["topics"]
-    # 兴趣主题也进入选项标签的候选（刚播主题优先，此处刚播有主题则标签取刚播）
-    assert song["label"].startswith("听个相关的故事（")
+    # 主题按 sorted() 稳定取首项融入句子（合作 U+5408 < 救援 U+6551）；其余
+    # 选项保持通用短句不带括号后缀（UX 视觉审查 2026-08-31：去「相关」
+    # 成人书面语与括号后缀；不排序会因主题行创建顺序漂移而偶现失败）
+    assert song["label"] == "听个合作的故事"
+    other = [o for o in payload["options"] if o["type"] != "song_story"]
+    for o in other:
+        assert "（" not in o["label"]

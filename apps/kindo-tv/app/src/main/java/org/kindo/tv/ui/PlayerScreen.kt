@@ -343,7 +343,7 @@ fun PlayerScreen(viewModel: AppViewModel, micGranted: Boolean) {
                                 .background(KindoColors.accent, PillShape)
                                 .padding(horizontal = 22.dp, vertical = 10.dp),
                         ) {
-                            Text("🎤 问 AI", color = Color.White, fontSize = 19.sp,
+                            Text("🎤 问小熊", color = Color.White, fontSize = 19.sp,
                                  fontWeight = FontWeight.Bold)
                         }
                     } else {
@@ -353,7 +353,7 @@ fun PlayerScreen(viewModel: AppViewModel, micGranted: Boolean) {
                                 .background(Color(0x2EFFFFFF), PillShape)
                                 .padding(horizontal = 22.dp, vertical = 10.dp),
                         ) {
-                            Text("🎤 AI 在睡觉", color = Color(0xB3FFF6EA), fontSize = 19.sp,
+                            Text("🎤 小熊在睡觉", color = Color(0xB3FFF6EA), fontSize = 19.sp,
                                  fontWeight = FontWeight.Bold)
                         }
                     }

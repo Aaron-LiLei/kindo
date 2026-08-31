@@ -91,7 +91,8 @@ fun HomeScreen(viewModel: AppViewModel, micGranted: Boolean) {
                         Text("🎤", fontSize = 52.sp)
                         Spacer(Modifier.width(22.dp))
                         Text(
-                            if (voiceReady) "和 AI 说话" else "AI 在睡觉",
+                            // 儿童端不出现"AI"内部术语（AGENTS 文案规则）；对话人格=小熊（🐻）
+                            if (voiceReady) "和小熊说话" else "小熊在睡觉",
                             color = if (voiceReady) Color.White else KindoColors.textSecondary,
                             fontSize = 36.sp, fontWeight = FontWeight.Bold,
                         )

@@ -63,13 +63,17 @@ _OPENING_TTS_TIMEOUT_S = 8.0
 _OPENING_MAX_CHARS = 60
 _SENTENCE_END = "。！？!?；;\n"
 
-# 选项类型 → 儿童端标签与开场承接语（交互细节由 TV 端渲染）
+# 选项类型 → 儿童端标签与开场承接语（交互细节由 TV 端渲染）。
+# 面向学龄前的短句：不用「相关」这类成人书面语；song_story 的主题在
+# _build_options 里自然融入句子（如「听个海洋的故事」），其余选项
+# 不带主题后缀——括号后缀是成人排版且三个选项重复无信息量
+# （UX 视觉审查 2026-08-31）
 TYPE_LABELS = {
     "knowledge": "聊聊刚才的故事",
     "quiz": "答个小问题",
     "roleplay": "演一演小剧场",
     "vocabulary": "学几个新单词",
-    "song_story": "听个相关的故事",
+    "song_story": "听个故事",
     "offscreen_game": "玩个不看屏幕的小游戏",
     "real_explore": "去发现身边的东西",
 }
@@ -344,9 +348,16 @@ class TransitionOrchestrator:
                 break
         for o in out:
             o["label"] = TYPE_LABELS.get(o["type"], o["type"])
+            # song_story 主题自然融入句子（「听个海洋的故事」）；仅短中文
+            # 主题融入（英文/长主题如「Nursery Rhymes」拼进句子反而不通顺），
+            # 其余选项保持通用短句（括号后缀是成人排版且重复无信息量）
             label_topic = topics or interest  # 选项标签优先刚播主题，无则用兴趣主题
-            if label_topic:
-                o["label"] = f"{o['label']}（{label_topic[0]}）"
+            if label_topic and o["type"] == "song_story":
+                # sorted 取稳定首项：主题行的创建顺序随进程哈希随机化漂移，
+                # 不排序会让同一媒体的标签在两次运行间不确定（测试实测偶现）
+                first = sorted(label_topic)[0]
+                if len(first) <= 4 and all("\u4e00" <= ch <= "\u9fff" for ch in first):
+                    o["label"] = f"听个{first}的故事"
         return out[:3]
 
     @staticmethod

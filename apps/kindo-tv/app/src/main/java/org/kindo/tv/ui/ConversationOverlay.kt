@@ -2,19 +2,21 @@ package org.kindo.tv.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -61,8 +63,11 @@ fun ConversationOverlay(viewModel: AppViewModel) {
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-            modifier = Modifier.padding(60.dp).width(800.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
+            modifier = Modifier
+                .padding(horizontal = 60.dp, vertical = 40.dp)
+                .width(800.dp)
+                .fillMaxHeight(),
         ) {
             // 状态行（交互 §5）：大 emoji 是状态的第一信道的，文字只是辅佐
             PhaseBadge(state.phase, state.toolStatus)
@@ -82,14 +87,25 @@ fun ConversationOverlay(viewModel: AppViewModel) {
                 )
             }
 
-            // AI 流式文本
+            // 小熊流式文本：讲长故事时超出可用高度改为内部滚动（流式追加
+            // 自动滚到最新一句），「我要说话/不聊了」永不因正文过长被测量
+            // 塌缩出屏幕（UX 视觉审查 2026-08-31，与接力 offer 塌缩同机制）
             if (state.aiText.isNotEmpty()) {
+                val storyScroll = rememberScrollState()
+                LaunchedEffect(state.aiText) {
+                    if (storyScroll.maxValue > 0) {
+                        storyScroll.animateScrollTo(storyScroll.maxValue)
+                    }
+                }
                 Text(
                     state.aiText,
                     color = KindoColors.textPrimary,
                     fontSize = 26.sp,
                     lineHeight = 37.sp,
                     textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .weight(1f, fill = false)
+                        .verticalScroll(storyScroll),
                 )
             }
 
@@ -152,7 +168,8 @@ private fun PhaseBadge(phase: String, toolStatus: String) {
             "transcribing" -> "我想想刚才听到的话…"
             "thinking" -> "让我想想…"
             "tool_running" -> toolStatus.ifEmpty { "正在找…" }
-            "speaking" -> "AI 说："
+            // 儿童端不出现"AI"这类内部术语（AGENTS 文案规则）；🐻 人格=小熊
+            "speaking" -> "小熊说："
             "follow_up" -> "还想问什么？"
             "error" -> "出了点小问题，稍后再试试"
             else -> ""
@@ -176,12 +193,17 @@ private fun TransitionOverlayContent(viewModel: AppViewModel, t: org.kindo.tv.Tr
             .fillMaxSize()
             .background(Color(0xF2FFF7EC)),
     ) {
-        // 右上角柔和的剩余时间提示（交互 §5.2 TRANSITION_INTERACTION）
+        // 右上角柔和的剩余时间提示（交互 §5.2 TRANSITION_INTERACTION）。
+        // 分钟粒度的儿童文案——学龄前读不懂 M:SS，最后 1 分钟换"马上结束"
+        // 的软提示，到点固定"时间到啦"（UX 视觉审查 2026-08-31）
         if (t.remainingSeconds >= 0 && (t.phase == "interaction" || t.phase == "offer")) {
+            val minutes = t.remainingSeconds / 60
             Text(
-                if (t.remainingSeconds > 0)
-                    "⏳ 还能聊 ${t.remainingSeconds / 60}:${"%02d".format(t.remainingSeconds % 60)}"
-                else "⏳ 时间到啦",
+                when {
+                    t.remainingSeconds <= 0 -> "⏳ 时间到啦"
+                    minutes >= 1 -> "⏳ 还能聊 $minutes 分钟"
+                    else -> "⏳ 马上就要结束啦"
+                },
                 color = KindoColors.textSecondary, fontSize = 18.sp,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
