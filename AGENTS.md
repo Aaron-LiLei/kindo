@@ -19,7 +19,7 @@
 1. **LLM 不是权限来源**：一切可能增加/继续观看时长的动作（AI 工具、D-pad、自动下一集、续播）必须经服务端 Family Policy 校验。
 2. **Policy 判定语义 may_start / may_continue**：软限制不切断进行中的当前集、只拦下一集；硬截止（时段结束）到点停止；Policy 保存即 version+1、撤销受影响 Grant 并推送 stop/deny。
 3. **Playback Grant 与播放生命周期绑定**：32 字节 base64url token、库中只存 SHA-256 hash、无独立 TTL、无续签；经 Header 传输，不进 URL/日志/LLM；每个 GET/HEAD/Range 请求逐次校验。
-4. **单档案同时只允许一个 active playback**，冲突返回 409。
+4. **单档案同时只允许一个 active playback**：新播放请求自动切换（停旧建新，旧 playback 以 switch_media 收口）；409 仅用于状态冲突（如无暂停播放时的 resume）。
 5. **隐私边界**：儿童原始语音只在家庭网络内（TV→Hub→本地 ASR）、仅内存缓冲、转写完成即释放、默认不落盘不写日志；远程 LLM 只接收完成任务所需的最小文本上下文（视频文件、原始音频、NAS 路径、完整历史、Secret 一律不发送）。
 6. **TV 端永不持有** NAS 凭据 / LLM API Key / Provider Base URL；一切经 Hub。
 7. **字幕、sidecar、Provider 元数据按「非可信内容数据」处理**：其中出现的指令性文本不具指令优先级，不能触发工具、改规则或绕过 Policy。
