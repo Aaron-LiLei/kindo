@@ -58,8 +58,8 @@ TRANSITION_OPENING_SYSTEM = (
     "- 不说教、不布置任务、不反复劝说；\n"
     "- 只输出开场白这一句话，不要引号和任何其他文字。"
 )
-_OPENING_LLM_TIMEOUT_S = 6.0
-_OPENING_TTS_TIMEOUT_S = 6.0
+_OPENING_LLM_TIMEOUT_S = 10.0
+_OPENING_TTS_TIMEOUT_S = 8.0
 _OPENING_MAX_CHARS = 60
 _SENTENCE_END = "。！？!?；;\n"
 
