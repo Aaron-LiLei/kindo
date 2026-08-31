@@ -17,6 +17,9 @@ apps/kindo-admin/dist/
 apps/kindo-tv/.gradle/
 apps/kindo-tv/build/
 apps/kindo-tv/app/build/
+apps/kindo-pad/.gradle/
+apps/kindo-pad/build/
+apps/kindo-pad/app/build/
 local.properties
 
 # 部署运行数据（用户自建，见 README 快速开始）

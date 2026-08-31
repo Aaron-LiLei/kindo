@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 白色小熊脸（对话人格 🐻）：圆脸 + 双耳 + 点鼻，安全区 66dp 内 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 双耳 -->
+    <path
+        android:pathData="M36,30m-9,0a9,9 0,1 1,18 0a9,9 0,1 1,-18 0"
+        android:fillColor="#FFFFFF" />
+    <path
+        android:pathData="M72,30m-9,0a9,9 0,1 1,18 0a9,9 0,1 1,-18 0"
+        android:fillColor="#FFFFFF" />
+    <!-- 脸 -->
+    <path
+        android:pathData="M54,56m-24,0a24,24 0,1 1,48 0a24,24 0,1 1,-48 0"
+        android:fillColor="#FFFFFF" />
+    <!-- 眼睛 -->
+    <path
+        android:pathData="M46,52m-3,0a3,3 0,1 1,6 0a3,3 0,1 1,-6 0"
+        android:fillColor="#4A3628" />
+    <path
+        android:pathData="M62,52m-3,0a3,3 0,1 1,6 0a3,3 0,1 1,-6 0"
+        android:fillColor="#4A3628" />
+    <!-- 口鼻 -->
+    <path
+        android:pathData="M54,62m-4.5,0a4.5,4.5 0,1 1,9 0a4.5,4.5 0,1 1,-9 0"
+        android:fillColor="#4A3628" />
+</vector>

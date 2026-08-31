@@ -234,7 +234,11 @@ fun PlayerScreen(viewModel: AppViewModel, micGranted: Boolean) {
                     }
                     KidButton(
                         emoji = "↻", text = "再看一遍",
-                        onClick = { controller.resume() }, // resume 对 ENDED 会 seek 0 重播
+                        // 重播=新的播放请求：Grant 已随播放结束收口，旧 Grant 重播
+                        // 会被逐次校验拒绝（BAD_HTTP_STATUS）；同 D-pad 点播走
+                        // POST /playbacks 统一过 Policy（硬性约束 3/架构 A-06，
+                        // 2026-08-31 Pad 端 E2E 实测发现的跨端缺陷，两端同修）
+                        onClick = { viewModel.playFromUi(controller.nowPlaying.value.mediaId, 0L) },
                         container = KindoColors.kidGreen, fontSize = 24,
                     )
                     KidButton(

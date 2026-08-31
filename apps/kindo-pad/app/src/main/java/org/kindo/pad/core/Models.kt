@@ -1,4 +1,4 @@
-package org.kindo.tv.core
+package org.kindo.pad.core
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json

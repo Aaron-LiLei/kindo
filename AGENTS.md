@@ -18,6 +18,7 @@
 
 - Android TV：Kotlin + Jetpack Compose for TV + AndroidX Media3（HttpDataSource 注入自定义 Header）
 - TV 语音：AudioRecord，PCM16LE/16kHz/mono，仅 LISTENING/FOLLOW_UP 期间采集；TV TTS 默认 Android 系统 TextToSpeech（PRD TTS-006 回退兜底）
+- Android Pad：`apps/kindo-pad`，Kotlin + Jetpack Compose（触屏）+ AndroidX Media3，自适应 7"~12" 与横竖屏；与 TV 端同一 Hub 契约、儿童端状态机与学龄前视觉 v2 口径（Pad端设计决策 2026-08-31）
 - 可选克隆 TTS：独立 kindo-tts 容器（sherpa-onnx ZipVoice 零样本克隆，纯 CPU 离线，仅容器网络内可达；hub_tts 任何不可用回退系统 TTS，技术方案 §6.7）
 - Kindo Hub：Python + FastAPI + Pydantic + SQLAlchemy + Alembic，模块化单体；SQLite（WAL），必须在本地文件系统
 - Web Admin：React + TypeScript + Vite + Ant Design v6，构建产物静态并入 kindo-hub（admin_dist）

@@ -144,6 +144,7 @@ tar -xjf sherpa-onnx-paraformer-zh-int8-2025-10-07.tar.bz2 --strip-components=1
 |---|---|
 | `apps/kindo-hub` | 服务端（Python + FastAPI + SQLite，含家长后台页面） |
 | `apps/kindo-tv` | Android TV 客户端（Kotlin + Jetpack Compose for TV + Media3） |
+| `apps/kindo-pad` | Android 平板客户端（Kotlin + Jetpack Compose + Media3，触屏·自适应 7"~12"） |
 | `apps/kindo-asr` | 本地语音识别服务（sherpa-onnx Paraformer） |
 | `apps/kindo-admin` | 家长后台前端源码（React + TypeScript + Ant Design） |
 | `deploy` | Docker Compose 部署（amd64/arm64）与配置样例 |

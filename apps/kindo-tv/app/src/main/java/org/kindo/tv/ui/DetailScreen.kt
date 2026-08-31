@@ -92,7 +92,7 @@ private fun DetailContent(viewModel: AppViewModel, d: MediaDetail) {
                 // 集级海报 > 系列实体海报（TMDB）> 默认
                 val posterUrl = if (d.has_poster)
                     "${viewModel.hub.baseUrl}/api/v1/media/${d.media_id}/poster"
-                else if (d.series_entity_poster && d.series_entity_id != null)
+                else if (d.series_entity_poster == true && d.series_entity_id != null)
                     "${viewModel.hub.baseUrl}/api/v1/entities/${d.series_entity_id}/poster"
                 else
                     "${viewModel.hub.baseUrl}/api/v1/media/${d.media_id}/poster"
