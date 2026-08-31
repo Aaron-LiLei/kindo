@@ -188,7 +188,7 @@ def test_tool_permission_rejects_unlisted_tool():
 def test_ac19_parent_and_child_tool_registries_disjoint():
     child_src = inspect.getsource(__import__("kindo.agent.tools", fromlist=["tools"]))
     child_names = set(re.findall(r'"name": "([a-z_]+)"', child_src))
-    assert len(child_names) == 14  # 儿童侧 14 Tool（技术方案 §8）
+    assert len(child_names) == 15  # 儿童侧 15 Tool（技术方案 §8，2026-08-31 增 read_story）
     assert child_names & ai_tools.tool_names() == set()
 
 

@@ -286,6 +286,22 @@ TOOL_SCHEMAS: list[dict] = [
         },
         "strict": True,
     },
+    {
+        "type": "function",
+        "name": "read_story",
+        "description": "Read a family story aloud with the parent's recorded voice "
+                       "(falls back to system voice). Use when the child asks to hear "
+                       "a story read/told (讲故事/念故事/用爸爸妈妈的声音讲). "
+                       "The full text is spoken directly by the system; do not repeat it. "
+                       "Prefer search_media+play_media for original audio recordings.",
+        "parameters": {
+            "type": "object", "additionalProperties": False,
+            "properties": {
+                "query": {"type": ["string", "null"], "maxLength": 100},
+            },
+        },
+        "strict": True,
+    },
 ]
 
 _CHILD_STATUS = {
@@ -303,6 +319,7 @@ _CHILD_STATUS = {
     "get_related_topics": "正在想想相关的主题",
     "find_audio_content": "正在找好听的故事和儿歌",
     "suggest_offscreen_activity": "正在想一个好玩的活动",
+    "read_story": "正在翻开故事书",
 }
 
 
@@ -366,6 +383,8 @@ class ToolRuntime:
                     return self._find_audio(session, raw_args)
                 if tool_name == "suggest_offscreen_activity":
                     return self._suggest_activity(session, profile_id, raw_args)
+                if tool_name == "read_story":
+                    return self._read_story(session, profile_id, raw_args)
                 raise invalid_request(f"未知 Tool: {tool_name}")
         except Exception as exc:
             code = getattr(exc, "code", None)
@@ -655,6 +674,59 @@ class ToolRuntime:
             "title": title,
             "summary": "和爸爸妈妈一起，在家里找一个和刚才故事有关的东西，"
                        "说说它像什么、能用来做什么。",
+        })
+
+    def _read_story(self, session: Session, profile_id: str, args: dict) -> dict:
+        """朗读故事（§7.4 story_text）：返回 direct_speak 结果——编排器直接
+        分句播报原文（家长声音克隆优先、系统 TTS 兜底），原文不经 LLM 复述、
+        不进入模型上下文（非可信内容数据只作朗读素材）。"""
+        from ..models import ContentEntity, ContentTopic, EntityTopic, InterestSignal
+
+        query = (args.get("query") or "").strip()
+        stories = (
+            session.query(ContentEntity)
+            .filter(ContentEntity.entity_type == "story",
+                    ContentEntity.story_text.isnot(None))
+            .order_by(ContentEntity.title)
+            .all()
+        )
+        if not stories:
+            return _result("not_found", message_hint="家里还没有能读的故事文本")
+
+        target = None
+        if query:
+            target = next(
+                (e for e in stories if query in (e.title or "")), None)
+        if target is None and query:
+            # 标题未命中 → 主题命中（实体 topics）
+            topic_rows = (
+                session.query(EntityTopic.entity_id, ContentTopic.name)
+                .join(ContentTopic, ContentTopic.id == EntityTopic.topic_id)
+                .filter(EntityTopic.entity_id.in_([e.id for e in stories]))
+                .all())
+            by_topic = [e for e in stories if any(
+                eid == e.id and query in name for eid, name in topic_rows)]
+            if len(by_topic) == 1:
+                target = by_topic[0]
+            elif by_topic:
+                return _result("clarify", data={"candidates": [
+                    {"title": e.title} for e in by_topic[:4]]})
+        if target is None and not query:
+            # 无偏好：取近期兴趣信号最近接触的故事，缺省第一个
+            recent = (
+                session.query(InterestSignal.entity_id)
+                .filter(InterestSignal.entity_id.in_([e.id for e in stories]))
+                .order_by(InterestSignal.created_at.desc())
+                .limit(1).scalar())
+            target = next((e for e in stories if e.id == recent), stories[0])
+        if target is None:
+            return _result("clarify", data={"candidates": [
+                {"title": e.title} for e in stories[:4]]})
+        return _result("ok", data={
+            "direct_speak": True,
+            "entity_id": target.id,
+            "title": target.title,
+            "speak_text": (target.story_text or "").strip(),
         })
 
     _notifier = None

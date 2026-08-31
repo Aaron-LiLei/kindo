@@ -184,7 +184,7 @@ def test_ac19_agent_permission_isolation():
 
     child_src = inspect.getsource(__import__("kindo.agent.tools", fromlist=["tools"]))
     child_names = set(re.findall(r'"name": "([a-z_]+)"', child_src))
-    assert len(child_names) == 14
+    assert len(child_names) == 15  # 2026-08-31 增 read_story
     assert child_names & parent_tools.tool_names() == set()
 
     src = inspect.getsource(parent_tools)

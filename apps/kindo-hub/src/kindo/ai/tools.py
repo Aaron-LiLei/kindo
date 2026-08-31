@@ -1,6 +1,6 @@
 """家长侧只读 Tool 注册表（PRD §10 家长 AI Tool 原则；AC-19）。
 
-与 agent/tools.py（儿童 14 Tool）零交集、零共享代码，全部只读。家长侧任务
+与 agent/tools.py（儿童 15 Tool，含 read_story）零交集、零共享代码，全部只读。家长侧任务
 形态是"一次组装上下文的分析跑批"，不是儿童式多轮 Tool Calling，因此只设与
 job 一一对应的复合只读工具（PRD §10 规定数据范围，不规定工具粒度）。
 注册表外工具名一律拒绝（Tool Permission）；数据最小化白名单（§19.6）：

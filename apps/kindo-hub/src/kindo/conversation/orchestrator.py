@@ -41,6 +41,22 @@ _SENTENCE_END_CHARS = "。！？!?；;\n"
 _TTS_MAX_BUFFER_CHARS = 100
 
 
+def split_sentences(text: str, max_chars: int = _TTS_MAX_BUFFER_CHARS) -> list[str]:
+    """整段文本 → 句列表（read_story 直接播报用；与流式增量切分同规则：
+    句读即切、无句读超长强制切分）。"""
+    out: list[str] = []
+    buf = ""
+    for ch in text:
+        buf += ch
+        if ch in _SENTENCE_END_CHARS or len(buf) >= max_chars:
+            if buf.strip():
+                out.append(buf.strip())
+            buf = ""
+    if buf.strip():
+        out.append(buf.strip())
+    return out
+
+
 class Orchestrator:
     def __init__(
         self,
@@ -290,6 +306,23 @@ class Orchestrator:
                         session_id=conv.session_id, correlation_id=call.id,
                     )
                     turn.tool_calls.append({"name": call.name, "id": call.id})
+                    if result.get("data", {}).get("direct_speak"):
+                        # 朗读型结果（read_story，§7.4）：原文直接分句播报，不经
+                        # LLM 复述；上下文只留标题（原文不回传模型）
+                        title = result["data"].get("title") or "故事"
+                        await self._speak_story(conv, result["data"]["speak_text"])
+                        messages.append({
+                            "role": "tool", "tool_call_id": call.id,
+                            "content": json.dumps({"status": "ok", "data": {
+                                "read": True, "title": title}}, ensure_ascii=False),
+                        })
+                        messages.append({
+                            "role": "assistant",
+                            "content": f"（已用家里的声音朗读了故事《{title}》）",
+                        })
+                        turn.assistant_output = f"（朗读了故事：《{title}》）"
+                        conv.touch()
+                        return
                     messages.append({
                         "role": "tool", "tool_call_id": call.id,
                         "content": json.dumps(result, ensure_ascii=False),
@@ -355,6 +388,28 @@ class Orchestrator:
         self._realtime.emit(
             conv.device_id, "tts.request", instruction.to_payload(),
             session_id=conv.session_id, correlation_id=tts_id,
+        )
+
+    async def _speak_story(self, conv: ConversationSession, text: str) -> None:
+        """故事原文分句播报（read_story direct_speak 路径，§6.6 同机制）：
+        逐句 assistant.text.delta + tts.request，末句 last_tts_id 驱动追问窗口。
+        原文只走 TTS，不进入模型上下文。"""
+        request_id = new_id()
+        sentences = split_sentences(text)
+        self._emit_state(conv, "speaking")
+        full = ""
+        for s in sentences:
+            full += s
+            self._realtime.emit(
+                conv.device_id, "assistant.text.delta",
+                {"delta": s}, session_id=conv.session_id,
+                correlation_id=request_id,
+            )
+            await self._speak(conv, s)
+        self._realtime.emit(
+            conv.device_id, "assistant.text.final",
+            {"text": full, "response_id": request_id},
+            session_id=conv.session_id, correlation_id=request_id,
         )
 
     def _emit_state(self, conv: ConversationSession, state: str, **extra) -> None:

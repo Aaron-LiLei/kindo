@@ -497,7 +497,11 @@ class ScannerService:
 
         media.has_poster = self._refresh_poster(
             provider, obj, media, sc, probe, dir_index, None, [])
-        sync_media_entity(session, media)
+        entity = sync_media_entity(session, media)
+        if entity is not None and etype == "story" and sc.story_text:
+            # 朗读文本（§7.4）：仅 sidecar 声明，扫描以 sidecar 为准覆盖；
+            # 非可信内容数据——只作 read_story 播报素材，不进 LLM 上下文
+            entity.story_text = sc.story_text.strip()[:3000]
         if existing is None:
             return "created"
         return "unchanged"

@@ -403,6 +403,9 @@ class ContentEntity(Base):
     # Normalizer 合并产物（决策四）：作品简介与首播/上映日期（非检索字段）
     overview: Mapped[str | None] = mapped_column(Text, nullable=True)
     release_date: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    # 故事朗读文本（§7.4 story_text，sidecar 声明）：read_story 直接分句播报，
+    # 不经 LLM 复述、不进入模型上下文
+    story_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     difficulty: Mapped[str | None] = mapped_column(String(32), nullable=True)
     sequence_no: Mapped[int] = mapped_column(Integer, default=1)
     repeatable: Mapped[bool] = mapped_column(Boolean, default=False)

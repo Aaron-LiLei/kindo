@@ -183,5 +183,5 @@ def test_migration_idempotent_on_fresh_v03(tmp_path):
     _upgrade(tmp_path, "head", db_url)
     _upgrade(tmp_path, "head", db_url)
     con = sqlite3.connect(db_file)
-    assert con.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0016"
+    assert con.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0017"
     con.close()

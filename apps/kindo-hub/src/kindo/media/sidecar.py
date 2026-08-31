@@ -20,6 +20,8 @@ VALID_FIELDS = {
     # v0.3（技术方案 §7.4）
     "entity_type", "content_class", "modality", "age_min", "age_max",
     "topics", "difficulty", "sequence_no", "repeatable",
+    # v0.3.7（2026-08-31）：故事朗读文本（read_story 直接播报，不经 LLM 复述）
+    "story_text",
 }
 
 
@@ -43,6 +45,9 @@ class Sidecar:
     # 海报图文件名（相对该 sidecar 所在目录，如 "poster.jpg"）；扫描时缩放落入
     # /data/cache/posters/{media_id}.jpg（§13.2）。图片同样按非可信内容数据处理，仅作展示。
     poster_file: str | None = None
+    # 故事朗读文本（story 实体专用，§7.4）：非可信内容数据——仅作为 read_story
+    # 的朗读素材在服务端直接分句播报，不进入 LLM 上下文
+    story_text: str | None = None
 
 
 def _parse_one(data: dict, source: Path | None, sc: Sidecar) -> None:
@@ -79,6 +84,9 @@ def _parse_one(data: dict, source: Path | None, sc: Sidecar) -> None:
     poster = data.get("poster")
     if isinstance(poster, str) and poster.strip():
         sc.poster_file = poster.strip()
+    story = data.get("story_text")
+    if isinstance(story, str) and story.strip():
+        sc.story_text = story.strip()
 
 
 def sidecar_from_texts(texts: list[str]) -> Sidecar:
