@@ -215,6 +215,8 @@ fun Modifier.kidBreathing(): Modifier = composed {
  *  返回一律走遥控器 BACK（TV-002，KindoApp BackHandler 链）。
  *  屏上 ← 的来历是 8-21 鼠标/模拟器测试场景补丁，对 D-pad 反而有害：
  *  角落里可聚焦的小箭头会截获孩子的焦点造成误触返回。
+ *  onMic 只给浏览类页面（那里是唯一语音入口）；找一找页不传——
+ *  页内「说出你想看的」主角卡即语音入口，重复挂就是同功能双按钮。
  *  筛选 chips 一律放顶栏下方独占行（BrowseScreen.TypeChips），
  *  塞顶栏会超出 1280dp 屏宽导致末位 chip 折行错位。 */
 @Composable

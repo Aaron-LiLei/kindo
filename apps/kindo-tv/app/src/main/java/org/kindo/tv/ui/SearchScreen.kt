@@ -41,6 +41,8 @@ import org.kindo.tv.ui.theme.KindoColors
  *
  * 结构：语音主角卡（说）→ 按类型挑（服务端 type_counts 派生）→
  * 按主题挑（服务端 explore_themes 派生）。无 TextField、无 IME。
+ * 顶栏不挂 onMic：本页主角卡即语音入口，再挂通栏「🎤 说话」就是同功能
+ * 双按钮（2026-08-31 修订）；浏览页顶栏 onMic 惯例不受影响。
  */
 @Composable
 fun SearchScreen(viewModel: AppViewModel) {
@@ -57,10 +59,7 @@ fun SearchScreen(viewModel: AppViewModel) {
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState()),
         ) {
-            TopBar(
-                title = "找一找",
-                onMic = { viewModel.startConversation() },
-            )
+            TopBar(title = "找一找")
             Column(modifier = Modifier.padding(horizontal = 56.dp)) {
                 // 主角：说给 Kindo 听（找的第一路径就是开口）
                 Box(
