@@ -1,23 +1,35 @@
 """Growth Transition Orchestrator（v0.3 决策七，阶段 4a）。
 
 订阅 Policy Boundary Event（唯一触发源）→ 频控与启用检查 → 生成 offer
-（≤3 选项，模板开场承接刚播内容）→ Realtime transition.* 事件 →
-选择（interaction/audio/offscreen）→ 时间盒收尾 → 结束路由与兴趣信号。
+（≤3 选项；开场白由 LLM 基于 Transition Context 个性化生成——GRW-002
+要求承接标题/主题/角色/剧情线索，任何失败回退模板）→ Realtime
+transition.* 事件 → 选择（interaction/audio/offscreen）→ 时间盒收尾 →
+结束路由与兴趣信号。
+
+开场白语音（TTS-005/006）：家长声音克隆可用时 Hub 预合成音频并在
+transition.offer 携带 opening_audio_path（TV 经 HubTtsPlayer 播放，
+拉取失败自动回退系统 TTS 读同句文本）；未携带时 TV 本地系统 TTS 朗读。
 
 红线（硬性约束 11）：拒绝即止不反复说服；时间盒硬上限；当日频控。
 单一状态源：交互状态属 Conversation，TransitionSession 只存业务事实。
 """
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
+from collections.abc import Callable, Coroutine
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from sqlalchemy.orm import Session
 
 from ..config import Config
 from ..models import (
+    ContentCharacter,
     ContentEntity,
     ContentTopic,
+    EntityCharacter,
     EntityTopic,
     InterestSignal,
     Media,
@@ -25,9 +37,31 @@ from ..models import (
     TransitionSession,
 )
 from ..policy.engine import PolicyEngine
+from ..providers.llm import (
+    OpenAIChatCompletionsAdapter,
+    with_first_event_timeout,
+)
+from ..providers.tts import TtsService
 from ..util import new_id
 
 logger = logging.getLogger("kindo.transition")
+
+# GRW-002 开场白个性化：LLM 输出的长度与超时上限（超限截断/超时回退模板，
+# 保证 offer 在边界事件后的等待有界）
+TRANSITION_OPENING_SYSTEM = (
+    "你是学龄前孩子的电视伙伴。动画时间刚结束，请说出成长接力的开场白，"
+    "温柔地接住孩子对刚看内容的兴趣。\n"
+    "要求：\n"
+    "- 1~2 句、总共不超过 40 个字，像家人聊天一样自然；\n"
+    "- 必须提到刚看内容的具体细节（从提供的标题、主题、角色、剧情线索中选一两个）；\n"
+    "- 结尾可以自然地邀请孩子一起做点别的；\n"
+    "- 不说教、不布置任务、不反复劝说；\n"
+    "- 只输出开场白这一句话，不要引号和任何其他文字。"
+)
+_OPENING_LLM_TIMEOUT_S = 6.0
+_OPENING_TTS_TIMEOUT_S = 6.0
+_OPENING_MAX_CHARS = 60
+_SENTENCE_END = "。！？!?；;\n"
 
 # 选项类型 → 儿童端标签与开场承接语（交互细节由 TV 端渲染）
 TYPE_LABELS = {
@@ -51,6 +85,18 @@ class TransitionOrchestrator:
         self._notifier = notifier  # realtime.emit
         self._playback = playback
         self._provider_resolver = provider_resolver  # 判断 LLM 可用性
+        # 开场白个性化（app 装配后期绑定；测试可注入假件，未绑定时模板开场）
+        self._llm: OpenAIChatCompletionsAdapter | None = None
+        self._tts: TtsService | None = None
+        self._submit: Callable[[Coroutine[Any, Any, None]], None] | None = None
+
+    def bind(self, llm, tts: TtsService, submit) -> None:
+        """绑定开场白生成依赖：LLM 适配器、TTS 服务（家长声音路由）与异步
+        提交入口（Orchestrator 编排循环——TtsService 的克隆 client 只在该
+        循环使用，避免跨事件循环共享连接池）。"""
+        self._llm = llm
+        self._tts = tts
+        self._submit = submit
 
     # ---------- 主循环 tick（app 后台循环驱动，每 15s） ----------
 
@@ -107,23 +153,155 @@ class TransitionOrchestrator:
                 return False
             ts.started_at = now
             ts.deadline = now + timedelta(minutes=rules.transition_max_minutes(self._cfg))
-            media_title = (ev.get("payload") or {}).get("title") or "刚才的内容"
             options = self._build_options(session, rules, ev)
-            opening = (
-                f"今天的动画时间看完啦。刚才的《{media_title}》是不是很有意思？"
-                "要不要一起做点别的？"
-            )
+            ctx = self._opening_context(session, ev.get("payload") or {})
+            provider_cfg = self._provider_resolver(provider_id)
             session.commit()
             transition_id = ts.id
             deadline_iso = ts.deadline.isoformat()
-        self._notify(device_id, "transition.offer", {
+            max_minutes = rules.transition_max_minutes(self._cfg)
+        if provider_cfg is not None and self._llm is not None and self._submit is not None:
+            # GRW-002：LLM 个性化开场（模板兜底）+ 可选家长声音（TTS-005）。
+            # 异步部分（LLM 流式 + 克隆合成）提交到编排循环执行，不阻塞 tick
+            self._submit(self._emit_offer(
+                device_id, transition_id, provider_cfg, ctx,
+                options, deadline_iso, max_minutes))
+        else:
+            self._notify(device_id, "transition.offer", {
+                "transition_id": transition_id,
+                "opening_text": self._template_opening(ctx["title"]),
+                "options": options,
+                "deadline_ts": deadline_iso,
+                "max_minutes": max_minutes,
+            })
+        return True
+
+    # ---------- 开场白生成（GRW-002 个性化，模板兜底） ----------
+
+    def _opening_context(self, session: Session, payload: dict) -> dict:
+        """组装开场白上下文：标题 + 主题 + 角色 + 剧情线索（实体简介截断）。"""
+        title = payload.get("title") or "刚才的内容"
+        media_id = payload.get("media_id")
+        topics: list[str] = []
+        characters: list[str] = []
+        overview = ""
+        if media_id:
+            ent = (
+                session.query(ContentEntity)
+                .filter(ContentEntity.source_media_id == media_id)
+                .first()
+            )
+            if ent is not None:
+                overview = (ent.overview or "").strip()[:120]
+                characters = [
+                    r[0] for r in (
+                        session.query(ContentCharacter.name)
+                        .join(EntityCharacter,
+                              EntityCharacter.character_id == ContentCharacter.id)
+                        .filter(EntityCharacter.entity_id == ent.id)
+                        .limit(5)
+                        .all())
+                ]
+                topics = [
+                    r[0] for r in (
+                        session.query(ContentTopic.name)
+                        .join(EntityTopic, EntityTopic.topic_id == ContentTopic.id)
+                        .filter(EntityTopic.entity_id == ent.id)
+                        .limit(5)
+                        .all())
+                ]
+        return {"标题": title, "主题": topics, "角色": characters, "剧情线索": overview}
+
+    @staticmethod
+    def _template_opening(title: str) -> str:
+        return (
+            f"今天的动画时间看完啦。刚才的《{title}》是不是很有意思？"
+            "要不要一起做点别的？"
+        )
+
+    async def _emit_offer(self, device_id: str, transition_id: str,
+                          provider_cfg, ctx: dict, options: list[dict],
+                          deadline_iso: str, max_minutes: int) -> None:
+        """offer 生成（编排循环内）：LLM 开场（兜底模板）→ 可选家长声音合成 → 下发。"""
+        try:
+            opening = await self._generate_opening(provider_cfg, ctx)
+        except Exception:
+            logger.exception("接力开场白生成失败，回退模板")
+            opening = None
+        if not opening:
+            opening = self._template_opening(ctx["标题"])
+        audio_path: str | None = None
+        if self._tts is not None:
+            try:
+                audio_path = await self._render_opening_audio(opening)
+            except Exception:
+                logger.warning("接力开场白克隆合成失败，回退系统语音", exc_info=True)
+                audio_path = None
+        payload = {
             "transition_id": transition_id,
             "opening_text": opening,
             "options": options,
             "deadline_ts": deadline_iso,
-            "max_minutes": rules.transition_max_minutes(self._cfg),
-        })
-        return True
+            "max_minutes": max_minutes,
+        }
+        if audio_path:
+            payload["opening_audio_path"] = audio_path
+        self._notify(device_id, "transition.offer", payload)
+
+    async def _generate_opening(self, provider_cfg, ctx: dict) -> str | None:
+        """LLM 生成开场白；任何失败/超时返回 None（模板兜底）。"""
+        if self._llm is None:
+            return None
+        llm = self._llm
+        messages = [
+            {"role": "system", "content": TRANSITION_OPENING_SYSTEM},
+            {"role": "user", "content": json.dumps(ctx, ensure_ascii=False)},
+        ]
+
+        async def _collect() -> str:
+            parts: list[str] = []
+            agen = llm.generate(provider_cfg, messages, None, new_id())
+            async for ev in with_first_event_timeout(
+                    agen, self._cfg.llm_first_event_timeout):
+                if ev.type == "text_delta" and ev.text:
+                    parts.append(ev.text)
+                elif ev.type == "error":
+                    return ""
+            return "".join(parts)
+
+        try:
+            raw = await asyncio.wait_for(_collect(), timeout=_OPENING_LLM_TIMEOUT_S)
+        except Exception:
+            logger.warning("接力开场白 LLM 调用失败/超时，回退模板", exc_info=True)
+            return None
+        return self._sanitize_opening(raw)
+
+    @staticmethod
+    def _sanitize_opening(text: str) -> str | None:
+        """清洗 LLM 输出：去引号/围栏/多余空白，长度截断到句读处。"""
+        t = text.replace("```", "").strip()
+        t = t.strip("\"“”‘’「」『』 ").strip()
+        t = " ".join(t.split())
+        if not t:
+            return None
+        if len(t) > _OPENING_MAX_CHARS:
+            cut = t[:_OPENING_MAX_CHARS]
+            best = max(cut.rfind(c) for c in _SENTENCE_END)
+            t = cut[:best + 1].strip() if best >= 10 else cut.rstrip("，,、 ") + "…"
+        return t or None
+
+    async def _render_opening_audio(self, opening: str) -> str | None:
+        """开场白优先家长声音（TTS-005）：hub_tts 合成成功才携带 audio_path；
+        未配置/失败/超时/冷却返回 None（render 内部已回退 android_tts 语义，
+        TV 端本地系统 TTS 朗读兜底）。"""
+        if self._tts is None:
+            return None
+        instruction = await asyncio.wait_for(
+            self._tts.render(new_id(), opening), timeout=_OPENING_TTS_TIMEOUT_S)
+        if (instruction.provider == TtsService.HUB_TTS_PROVIDER
+                and instruction.audio_path):
+            return instruction.audio_path
+        return None
 
     def _build_options(self, session: Session, rules, ev: dict) -> list[dict]:
         """≤3 个选项：优先与刚播内容主题相关（有音频内容→song_story；

@@ -83,6 +83,11 @@ class Orchestrator:
         fut = asyncio.run_coroutine_threadsafe(coro, self._loop)
         fut.add_done_callback(self._on_task_done)
 
+    def submit(self, coro) -> None:
+        """公共提交入口：其他模块（如 Transition 开场白生成）把异步工作
+        放到本编排循环执行——TtsService 的克隆 client 绑定此循环。"""
+        self._submit(coro)
+
     @staticmethod
     def _on_task_done(fut) -> None:
         try:

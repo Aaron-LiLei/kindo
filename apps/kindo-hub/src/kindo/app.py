@@ -240,6 +240,9 @@ def create_app(cfg: Config | None = None) -> FastAPI:
         playback, policy_engine, history, provider_registry.get,
     )
     state.orchestrator = orchestrator
+    # GRW-002 开场白个性化：LLM 生成（模板兜底）+ 家长声音克隆（TTS-005）；
+    # 异步部分复用编排循环（TtsService 克隆 client 的唯一事件循环）
+    transition.bind(llm=llm, tts=tts, submit=orchestrator.submit)
 
     app = FastAPI(title="Kindo Hub", version="0.1.0", docs_url="/api/docs", openapi_url="/api/openapi.json")
     app.state.kindo = state

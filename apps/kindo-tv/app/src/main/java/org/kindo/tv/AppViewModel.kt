@@ -848,9 +848,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     remainingSeconds = if (deadlineMs > 0)
                         ((deadlineMs - System.currentTimeMillis()) / 1000).toInt() else -1)
                 denyMessage.value = null // offer 已承接"时间到"语义，不叠加拒绝弹窗
-                // AI 主动开口的语音形态（交互 §5.2：开场白朗读；本地 TTS，离线安全）
+                // AI 主动开口的语音形态（交互 §5.2：开场白朗读）：家长声音
+                // （hub_tts，Hub 预合成 audio_path）优先，拉取失败 HubTtsPlayer
+                // 自动回退系统 TTS 读同句文本；未携带音频走本地系统 TTS（离线安全）
                 if (opening.isNotBlank() && !conversation.value.active) {
-                    tts.speak("transition-$tid", opening) { }
+                    val openingAudio = payload["opening_audio_path"] as? String
+                    if (openingAudio != null) {
+                        hubTts.speak("transition-$tid", openingAudio, opening) { }
+                    } else {
+                        tts.speak("transition-$tid", opening) { }
+                    }
                 }
                 startTransitionCountdown(deadlineMs)
             }
@@ -1059,9 +1066,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         denyMessage.value = null
     }
 
+    /** 停止接力开场白朗读（选择/拒绝/完成时）：只停声不开麦——interaction
+     *  阶段的开麦由 transition.state 路径负责，避免与自动开麦冲突。 */
+    private fun stopTransitionSpeech() {
+        tts.stop()
+        hubTts.stop()
+    }
+
     fun selectTransitionOption(optionType: String) {
         val tid = transition.value.transitionId
         if (tid.isNotEmpty()) {
+            stopTransitionSpeech()
             realtime.sendTransitionSelect(tid, optionType)
             transition.value = transition.value.copy(phase = "interaction")
         }
@@ -1069,12 +1084,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun rejectTransition() {
         val tid = transition.value.transitionId
+        stopTransitionSpeech()
         if (tid.isNotEmpty()) realtime.sendTransitionReject(tid)
         endTransitionUi("rejected")
     }
 
     fun finishTransitionActivity() {
         val tid = transition.value.transitionId
+        stopTransitionSpeech()
         if (tid.isNotEmpty()) realtime.sendTransitionActivityDone(tid)
         endTransitionUi("accepted_completed")
     }
