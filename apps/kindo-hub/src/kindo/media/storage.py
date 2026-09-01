@@ -82,7 +82,8 @@ class LocalMountedDirectoryProvider:
                 rel = full.parent.relative_to(self.root).as_posix()
                 yield rel, full
 
-    def stat(self, path_key: str) -> StorageObject:
+    def stat(self, path_key: str, timeout: float | None = None) -> StorageObject:
+        """timeout 仅网络源实现使用（流端点实际大小校验的短超时）；本地源即时返回，忽略。"""
         p = self._resolve(path_key)
         return self._to_object(p)
 

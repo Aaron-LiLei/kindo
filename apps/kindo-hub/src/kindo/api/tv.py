@@ -1,6 +1,9 @@
 """TV / Hub 资源与命令接口（技术方案 §3.1）。"""
 from __future__ import annotations
 
+import logging
+import threading
+import time
 from datetime import UTC, timedelta
 from pathlib import Path
 
@@ -18,7 +21,19 @@ from .deps import RangeUnsatisfiable, device_from_request, get_db, get_state, pa
 
 router = APIRouter(prefix="/api/v1", tags=["tv"])
 
+logger = logging.getLogger("kindo.api.tv")
+
 CHUNK_SIZE = 256 * 1024
+
+# 流长度的实际大小校验（技术方案 §9.4）：流长度仍以扫描入库的 size_bytes 为基线，
+# 不逐请求阻塞 stat（网盘链路 stat/HEAD TTFB 可达 30s+，是播放器 30s 读超时断连的
+# 根因）。但源文件变化（截断/替换）会让声明的 Content-Length 无法兑现——迭代器提前
+# EOF，连接中断，播放器只看到误导性的 IO 网络错误。故以「3s 短超时 stat + 60s TTL
+# 缓存」校验实际大小：不一致时就地自愈 size_bytes；stat 失败（挂载离线等）回退入库值。
+_SIZE_TTL_SECONDS = 60.0
+_STAT_TIMEOUT_SECONDS = 3.0
+_size_cache: dict[tuple[str, str], tuple[float, int | None]] = {}
+_size_cache_lock = threading.Lock()
 
 
 class CreateConversationBody(BaseModel):
@@ -473,16 +488,61 @@ def _authorize_stream(request: Request, session: Session, device: Device,
     return media, pb
 
 
+def _actual_size(state, media: Media) -> int | None:
+    """源文件当前实际大小（TTL 缓存 + 短超时）；不可得（挂载离线/超时）时 None。"""
+    key = (media.mount_id, media.path_key)
+    with _size_cache_lock:
+        cached = _size_cache.get(key)
+        if cached is not None and time.monotonic() - cached[0] < _SIZE_TTL_SECONDS:
+            return cached[1]
+    try:
+        provider = state.storage.get(media.mount_id)
+        actual: int | None = provider.stat(
+            media.path_key, timeout=_STAT_TIMEOUT_SECONDS).size
+    except Exception:
+        actual = None
+    with _size_cache_lock:
+        _size_cache[key] = (time.monotonic(), actual)
+    return actual
+
+
+def _stream_size(state, session: Session, media: Media, provider) -> int:
+    """本次流响应的长度：入库 size_bytes 经短超时实际校验修正；不一致就地自愈。"""
+    recorded = media.size_bytes
+    if not recorded:
+        # 扫描记录缺失（旧行）→ 保留原有实时探测回退
+        return provider.stat(media.path_key).size
+    actual = _actual_size(state, media)
+    if actual and actual != recorded:
+        logger.info("媒体大小与入库不一致，自愈 size_bytes：media_id=%s recorded=%d actual=%d",
+                    media.id, recorded, actual)
+        media.size_bytes = actual
+        session.commit()
+        return actual
+    return recorded
+
+
 def _file_iter(state, media: Media, start: int, length: int):
     provider = state.storage.get(media.mount_id)
-    remaining = length
-    with provider.open_range(media.path_key, start) as f:
-        while remaining > 0:
-            chunk = f.read(min(CHUNK_SIZE, remaining))
-            if not chunk:
-                break
-            remaining -= len(chunk)
-            yield chunk
+    delivered = 0
+    try:
+        with provider.open_range(media.path_key, start) as f:
+            while delivered < length:
+                chunk = f.read(min(CHUNK_SIZE, length - delivered))
+                if not chunk:
+                    break
+                delivered += len(chunk)
+                yield chunk
+    except Exception:
+        logger.warning("媒体流上游读取失败：media_id=%s mount=%s offset=%d remaining=%d",
+                       media.id, media.mount_id, start, length - delivered)
+        raise
+    if delivered < length:
+        # 响应已按声明的 Content-Length 发出，连接必然中断（播放器表现为 IO 错误）；
+        # 记上下文供排查：源文件被截断/替换未重扫，或网盘上游失败
+        logger.warning("媒体流上游短读：media_id=%s mount=%s declared=%d delivered=%d "
+                       "offset=%d（源文件变化或网盘上游失败）",
+                       media.id, media.mount_id, length, delivered, start)
 
 
 def _stream_response(request: Request, session: Session, device: Device, media_id: str,
@@ -495,9 +555,9 @@ def _stream_response(request: Request, session: Session, device: Device, media_i
         provider = state.storage.get(media.mount_id)
     except KeyError:
         raise not_found("媒体所属挂载已停用或删除，无法拉流") from None
-    # 文件大小用扫描入库的 size_bytes（避免每次 Range 都对网盘做 stat/HEAD——
-    # 百度链路 TTFB 可达 30s+，是播放器 30s 读超时断连的根因）；缺失时才回退实时探测
-    size = media.size_bytes or provider.stat(media.path_key).size
+    # 文件长度：入库 size_bytes + 短超时实际校验（TTL 缓存，见 _stream_size）——
+    # 不逐请求阻塞 stat（网盘 TTFB 30s+ 是播放器读超时断连的根因）
+    size = _stream_size(state, session, media, provider)
     range_header = request.headers.get("Range")
     headers = {
         "Accept-Ranges": "bytes",

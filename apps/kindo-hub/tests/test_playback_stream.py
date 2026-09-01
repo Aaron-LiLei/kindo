@@ -108,6 +108,70 @@ def test_play_grant_and_range(library_env):
     assert r.content == b""
 
 
+def test_stream_size_mismatch_self_heals(library_env):
+    """源文件与入库 size_bytes 不一致：流长度以实际文件为准并自愈入库值。
+
+    此前按（过期的）入库长度声明 Content-Length → 迭代器提前 EOF →
+    Starlette "Response content shorter than Content-Length" 中断连接，
+    播放器只看到误导性的 IO 网络错误（2026-09-01 Pad 实测复现）。"""
+    env = library_env
+    from kindo.api import tv as tv_api
+
+    tv_api._size_cache.clear()
+    _d, token = env.pair_device()
+    headers = env.device_headers(token)
+    media = _first_media(env, token, "第1集")
+
+    from kindo.models import Media as MediaModel
+
+    with env.db.session() as s:
+        row = s.get(MediaModel, media["media_id"])
+        real_size = row.size_bytes
+        assert real_size and real_size > 0
+        row.size_bytes = real_size + 12345  # 模拟源文件被截断后的过期记录
+        s.commit()
+
+    body = _request_play(env, headers, media["media_id"]).json()
+    stream_headers = {**headers, "X-Kindo-Playback-Grant": body["stream_descriptor"]["grant"]}
+    r = env.client.get(body["stream_descriptor"]["url"], headers=stream_headers)
+    assert r.status_code == 200
+    assert len(r.content) == real_size  # 按实际大小交付，不再中断连接
+    with env.db.session() as s:
+        assert s.get(MediaModel, media["media_id"]).size_bytes == real_size  # 入库值已自愈
+    tv_api._size_cache.clear()
+
+
+def test_file_iter_short_read_logs_context(caplog):
+    """上游提前 EOF：记录 media/declared/delivered 上下文（此前只有
+    uvicorn 的无上下文 RuntimeError，无法定位是哪个媒体、差多少字节）。"""
+    import logging
+    import types
+
+    from kindo.api import tv as tv_api
+
+    class FakeReader:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self, size):
+            return b""  # 立即 EOF：上游短读
+
+    class FakeProvider:
+        def open_range(self, path_key, start, length=None):
+            return FakeReader()
+
+    state = types.SimpleNamespace(storage={"m1": FakeProvider()})
+    media = types.SimpleNamespace(id="media-1", mount_id="m1", path_key="a.mp4")
+    with caplog.at_level(logging.WARNING, logger="kindo.api.tv"):
+        chunks = list(tv_api._file_iter(state, media, 0, 1024))
+    assert chunks == []
+    assert any("媒体流上游短读" in rec.getMessage() and "media-1" in rec.getMessage()
+               for rec in caplog.records)
+
+
 @requires_ffprobe
 @pytest.mark.slow
 def test_stream_without_or_bad_grant_rejected(library_env):

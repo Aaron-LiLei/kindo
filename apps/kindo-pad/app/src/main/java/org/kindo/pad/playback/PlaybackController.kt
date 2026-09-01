@@ -73,6 +73,11 @@ class PlaybackController(private val appContext: Context) {
     private val _playbackEnded = MutableStateFlow(false)
     val playbackEnded: StateFlow<Boolean> = _playbackEnded
 
+    /** 本次 playback 是否真正起播过（首次 isPlaying）：未起播的问题态
+     *  （卡缓冲/起播失败）供播放页返回直退判定，黑屏下"先收控制条"读作没反应。 */
+    private val _everStarted = MutableStateFlow(false)
+    val everStarted: StateFlow<Boolean> = _everStarted
+
     private val http = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(120, TimeUnit.SECONDS)  // 网盘链路首字节可达 30s+（stat+range 两跳）
@@ -97,6 +102,7 @@ class PlaybackController(private val appContext: Context) {
                         when {
                             isPlaying && lastReportedState != "started" -> {
                                 lastReportedState = "started"
+                                _everStarted.value = true
                                 eventSender?.invoke(UUID.randomUUID().toString(), pid, "started", pos)
                             }
                             !isPlaying && p.playbackState == Player.STATE_READY &&
@@ -153,6 +159,7 @@ class PlaybackController(private val appContext: Context) {
         currentPlaybackId = descriptor.playbackId
         lastReportedState = "idle"
         _playbackEnded.value = false
+        _everStarted.value = false
 
         // 媒体请求注入 Authorization 与 X-Kindo-Playback-Grant（§9.3；Grant 不进 URL）
         val okFactory = OkHttpDataSource.Factory(http)
@@ -275,6 +282,7 @@ class PlaybackController(private val appContext: Context) {
         player?.clearMediaItems()
         currentPlaybackId = null
         _playbackEnded.value = false
+        _everStarted.value = false
         _nowPlaying.value = NowPlaying()
         _isPlaying.value = false
         _positionMs.value = 0

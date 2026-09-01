@@ -115,7 +115,7 @@ class SmbStorageProvider:
             if "." + obj.name.rsplit(".", 1)[-1].lower() in SUBTITLE_EXTENSIONS:
                 yield obj
 
-    def stat(self, path_key: str) -> StorageObject:
+    def stat(self, path_key: str, timeout: float | None = None) -> StorageObject:
         self._register()
         return self._to_object(path_key)
 
@@ -274,8 +274,8 @@ class WebDavStorageProvider:
                 else:
                     yield StorageObject(path_key=full, name=name, size=size, mtime_ms=mtime)
 
-    def _to_object(self, path_key: str) -> StorageObject:
-        r = self._client.head(self._url_of(path_key))
+    def _to_object(self, path_key: str, timeout: float | None = None) -> StorageObject:
+        r = self._client.head(self._url_of(path_key), timeout=timeout)
         r.raise_for_status()
         size = int(r.headers.get("content-length", 0) or 0)
         mtime = 0
@@ -309,8 +309,8 @@ class WebDavStorageProvider:
             if "." + obj.name.rsplit(".", 1)[-1].lower() in SUBTITLE_EXTENSIONS:
                 yield obj
 
-    def stat(self, path_key: str) -> StorageObject:
-        return self._to_object(path_key)
+    def stat(self, path_key: str, timeout: float | None = None) -> StorageObject:
+        return self._to_object(path_key, timeout=timeout)
 
     def open_range(self, path_key: str, start: int, length: int | None = None):
         headers = {}

@@ -80,6 +80,7 @@ fun PlayerScreen(viewModel: AppViewModel, voice: VoiceEntry) {
     val isPlaying by controller.isPlaying.collectAsState()
     val isBuffering by controller.isBuffering.collectAsState()
     val ended by controller.playbackEnded.collectAsState()
+    val everStarted by controller.everStarted.collectAsState()
     val speed by controller.playbackSpeed.collectAsState()
     val deny by viewModel.denyMessage.collectAsState()
     val denyRetryable by viewModel.denyRetryable.collectAsState()
@@ -110,9 +111,11 @@ fun PlayerScreen(viewModel: AppViewModel, voice: VoiceEntry) {
         }
     }
 
-    // BACK 分级：控制条可见时先收控制条（对话框由各自 onDismissRequest 处理），
-    // 收起后本 BackHandler 失效、落到 KindoApp 的栈级 BackHandler → 退出播放
-    BackHandler(enabled = trackDialog == null && deny == null && controlsVisible) {
+    // BACK 分级：未起播的问题态（卡缓冲/起播失败）直接退出——黑屏下"先收控制条"
+    // 读作没反应（模拟器实测反馈，Pad 返回决策 2026-09-01）；已起播时控制条可见先收
+    // 控制条，收起后本 BackHandler 失效、落到 KindoApp 的栈级 BackHandler → 退出播放
+    // （对话框由各自 onDismissRequest 处理）
+    BackHandler(enabled = trackDialog == null && deny == null && controlsVisible && everStarted) {
         controlsVisible = false
     }
 
