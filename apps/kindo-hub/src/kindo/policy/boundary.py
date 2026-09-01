@@ -12,8 +12,10 @@ from __future__ import annotations
 import logging
 import threading
 from collections import deque
+from collections.abc import Callable
 from datetime import UTC, datetime
 
+from sqlalchemy import event as sa_event
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -33,6 +35,31 @@ class BoundaryEventPublisher:
         self._tz = tz
         self._queue: deque[dict] = deque()
         self._lock = threading.Lock()
+        # 事件驱动消费入口（app 装配 transition.tick）：publish 后立即起线程
+        # 消费，不等 15s 后台 tick——offer 到达延迟从"15s tick + 开场白生成"
+        # 降为"开场白生成"。线程自带兜底（tick 内部已有异常防护），publish
+        # 侧绝不受影响。
+        self._poke: Callable[[], None] | None = None
+
+    def set_poke(self, poke: Callable[[], None]) -> None:
+        self._poke = poke
+
+    def _schedule_poke(self, session: Session) -> None:
+        """事务提交后再触发消费：publish 只 flush 不 commit（提交在请求层/
+        调用方），poke 立即跑会查不到未提交的行（测试逮住的竞态）。
+        挂 after_commit 钩子；事务回滚则不触发（15s tick 兜底）。"""
+        if self._poke is None:
+            return
+
+        def _fire(*_args) -> None:
+            threading.Thread(target=self._poke, daemon=True,
+                             name="kindo-boundary-poke").start()
+
+        try:
+            sa_event.listen(session, "after_commit", _fire)
+        except Exception:
+            # 会话已提交/无法挂钩（如 tick 内路径）：直接消费兜底
+            _fire()
 
     # ---------- 发布 ----------
 
@@ -58,6 +85,7 @@ class BoundaryEventPublisher:
                 "limit_type": limit_type, "boundary_id": boundary_id,
                 "payload": payload or {}, "ts": now.isoformat(),
             })
+        self._schedule_poke(session)
         logger.info("Policy Boundary Event: %s", key)
         return True
 

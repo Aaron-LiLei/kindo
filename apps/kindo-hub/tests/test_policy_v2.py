@@ -185,10 +185,18 @@ def test_boundary_event_idempotent_on_ended(lib):
         rows = s.query(TransitionSession).all()
         denies = [t for t in rows if t.trigger_json.get("source") == "deny"]
         assert len(denies) == 1, rows
-    # drain 队列也只有一条对应事件
-    events = [e for e in env.state.playback._boundary.drain()
-              if e["limit_type"] == "daily_limit_reached"]
-    assert len(events) == 1
+    # 事件由 after_commit poke / 后台 tick 异步消费（2026-09-01 发布即消费；
+    # 本夹具无 Provider → _offer 静默放弃，决策七）：等待队列被消费即可，
+    # 幂等语义 = 重复 deny 只产生一行
+    deadline = time.time() + 15
+    while time.time() < deadline:
+        if len(env.state.playback._boundary._queue) == 0:
+            break
+        time.sleep(0.2)
+    with env.db.session() as s:
+        rows = s.query(TransitionSession).all()
+        denies = [t for t in rows if t.trigger_json.get("source") == "deny"]
+        assert len(denies) == 1, rows
 
 
 @requires_ffprobe

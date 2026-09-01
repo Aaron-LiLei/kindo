@@ -179,6 +179,13 @@ private fun DiscoveryStage(viewModel: AppViewModel, pairing: PairingUi) {
                 color = KindoColors.textSecondary, fontSize = 16.sp,
             )
         }
+
+        // 权限明示（家长页）：本应用唯一需要用户授权的是麦克风（语音对话用）
+        Spacer(Modifier.height(22.dp))
+        Text(
+            "🎤 和小熊说话需要「麦克风」权限，首次使用时系统会询问，请家长允许",
+            color = KindoColors.textSecondary, fontSize = 14.sp,
+        )
     }
 }
 

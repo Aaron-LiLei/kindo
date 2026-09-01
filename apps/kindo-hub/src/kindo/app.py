@@ -211,6 +211,8 @@ def create_app(cfg: Config | None = None) -> FastAPI:
         cfg, db.session_factory, policy_engine, boundary,
         notifier=realtime.emit, playback=playback,
         provider_resolver=lambda pid: provider_registry.get(pid))
+    # 边界事件发布即消费（不等 15s 后台 tick）：offer 到达延迟只余开场白生成
+    boundary.set_poke(transition.tick)
 
     state = AppState(
         config=cfg, db=db, storage=storage, scanner=scanner, policy=policy_engine,

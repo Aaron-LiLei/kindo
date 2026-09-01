@@ -114,8 +114,16 @@ def _trigger_deny(env) -> None:
     env.state.transition.tick()
 
 
-def _offer_payload(events) -> dict:
-    return next(p for t, p in events if t == "transition.offer")
+def _offer_payload(events, timeout_s: float = 15.0) -> dict:
+    """offer 由边界事件 after_commit poke / 后台 tick 异步发出（2026-09-01 起
+    发布即消费）：轮询等待，不再依赖显式 tick 的同步时序。"""
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        for t, p in events:
+            if t == "transition.offer":
+                return p
+        time.sleep(0.1)
+    raise AssertionError("transition.offer 未在超时内到达")
 
 
 # ---------- 纯单元：开场白清洗 ----------
@@ -144,8 +152,8 @@ def test_opening_generated_by_llm_with_clone_audio(env):
     events = _prepare(env, llm, tts=tts)
     _trigger_deny(env)
 
-    assert llm.calls == 1
     payload = _offer_payload(events)
+    assert llm.calls == 1
     assert payload["opening_text"] == "小海龟游过大海去找妈妈啦！想不想听听海龟的故事？"
     # 克隆可用：offer 携带 Hub 预合成音频路径（TV 端 hub_tts 优先播放）
     assert payload["opening_audio_path"].startswith("/api/v1/tts/")

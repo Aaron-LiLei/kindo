@@ -11,10 +11,12 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -216,6 +218,49 @@ fun TopBar(
                                         blurRadius = 6f),
                     ),
                 )
+            }
+        }
+    }
+}
+
+/**
+ * 儿童风格双按钮弹窗（与 DenyDialog 同一视觉语言：白卡 + 暖棕大字 + 糖果
+ * 按钮）——用于麦克风权限永久拒绝后的家长引导（去设置/知道了）。
+ */
+@Composable
+fun KidDialog(
+    emoji: String,
+    message: String,
+    confirmText: String,
+    onConfirm: () -> Unit,
+    dismissText: String,
+    onDismiss: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0x59000000))
+            .clickable(onClick = onDismiss),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier
+                .background(KindoColors.surface, RoundedCornerShape(32.dp))
+                .padding(horizontal = 44.dp, vertical = 36.dp),
+        ) {
+            androidx.compose.material3.Text(emoji, fontSize = 48.sp)
+            Spacer(Modifier.height(12.dp))
+            androidx.compose.material3.Text(
+                message, color = KindoColors.textPrimary, fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(24.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                KidButton(emoji = "⚙️", text = confirmText, onClick = onConfirm, fontSize = 20,
+                          container = KindoColors.kidBlue)
+                KidSoftButton(emoji = "👍", text = dismissText, onClick = onDismiss, fontSize = 19)
             }
         }
     }

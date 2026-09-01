@@ -11,7 +11,8 @@
         android:label="童映 Kindo"
         android:icon="@mipmap/ic_launcher"
         android:theme="@android:style/Theme.Material.Light.NoActionBar"
-        android:usesCleartextTraffic="true">
+        android:usesCleartextTraffic="true"
+        android:resizeableActivity="false">
         <activity
             android:name=".MainActivity"
             android:exported="true"
