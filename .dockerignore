@@ -1,0 +1,19 @@
+# 根上下文构建（deploy/kindo-*.Dockerfile）与本地开发的构建上下文裁剪：
+# 只送进镜像所需源码，排除本机大目录与敏感文件（模型走运行时卷，不进构建）。
+.git
+.github
+runtime/
+_work/
+docx_extract/
+项目文档/
+**/__pycache__
+**/.venv
+**/node_modules
+**/.gradle
+**/build
+apps/kindo-asr/model
+apps/kindo-tts/model
+apps/kindo-hub/admin_dist/assets/*.map
+deploy/data
+deploy/media
+deploy/content
