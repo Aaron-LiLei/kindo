@@ -1,6 +1,6 @@
 # Kindo 模型清单（SHA256SUMS 格式；目录行以 / 结尾=存在性检查）
 # tarball-url: https://github.com/aaron-lilei/kindo/releases/download/model-assets-v1/kindo-tts-zipvoice-distill-v1.tar.gz
-# tarball-sha256: 92b5d851450c47dfc42ae00b60ab5924c30093597b86146abcb68d803b33b4dd
+# tarball-sha256: 79a37542355061ff705792af1215ad3bcddf81f654fdd74c3a7de9ddb30ff7ab
 # 根目录: apps\kindo-tts\model
 f2de9a761a85e5ddd125dee6e05bad1c7ee92c11b83b4d775dab216a6aa41379  encoder.int8.onnx
 3cc2e08a96610d7ea1b227398e97cdbbe0414499741d3aec0b8113db2a2ab251  decoder.int8.onnx
