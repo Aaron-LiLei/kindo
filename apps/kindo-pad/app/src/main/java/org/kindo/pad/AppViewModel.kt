@@ -197,8 +197,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun wirePlaybackReporting() {
-        playbackController.eventSender = { eventId, playbackId, kind, positionMs ->
-            realtime.sendPlaybackEvent(eventId, playbackId, kind, positionMs)
+        playbackController.eventSender = { eventId, playbackId, kind, positionMs, errorCode ->
+            realtime.sendPlaybackEvent(eventId, playbackId, kind, positionMs, errorCode)
         }
         playbackController.trackChangedSender = { playbackId, audioId, subtitleId ->
             realtime.sendTrackChanged(playbackId, audioId, subtitleId)

@@ -509,6 +509,11 @@ def admin_media(request: Request, session: Session = Depends(get_db),
             .filter(ContentEntity.source_media_id.in_(ids)).all())
         if e.source_media_id
     }
+    # Direct Play 三态预检（T-20260902-003-03）：从扫描期 probe_json 派生，
+    # 家长提前看到「可能不兼容/不可播放」媒体，无需重扫
+    from ..media.probe import compat_from_probe
+
+    compat = {m.id: compat_from_probe(m.probe_json, m.media_type) for m in rows}
     return {
         "type_counts": type_counts,
         "items": [
@@ -518,6 +523,7 @@ def admin_media(request: Request, session: Session = Depends(get_db),
                 "duration_ms": m.duration_ms, "language": m.language,
                 "age_band": m.age_band, "tags": m.tags_json or {},
                 "playable": m.playable, "missing": m.missing,
+                "compat": compat[m.id],
                 "metadata_version": m.metadata_version,
                 "parent_edited": bool(m.parent_edited_json),
                 "has_poster": m.has_poster,

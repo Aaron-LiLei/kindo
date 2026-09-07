@@ -101,6 +101,45 @@ def _judge(container: str, video_codec: str | None, audio: list[ProbeStream]) ->
     return playable, notes
 
 
+def compat_from_probe(probe_json: dict | None, media_type: str | None = None) -> dict:
+    """Direct Play 三态预检（T-20260902-003-03，技术方案 §1.2 兼容矩阵）。
+
+    从扫描期入库的 probe_json 派生（不重扫）：ok=可直接播放；
+    device_dependent=可能不兼容（视设备解码器）；incompatible=不可播放；
+    unknown=未探测（skip 模式/探测失败/旧行）。家长后台据此提前看到异常媒体。
+    音频类内容（song/story）不套视频容器矩阵，只核对音频编码。
+    """
+    pj = probe_json or {}
+    if pj.get("error") or pj.get("skipped") or (
+        not pj.get("container") and "video_codec" not in pj
+    ):
+        return {"level": "unknown", "reasons": []}
+    audio_only = media_type in ("song", "story")
+    reasons: list[str] = []
+    level = "ok"
+    container = pj.get("container") or ""
+    if container and not audio_only and container not in CONTAINER_PLAYABLE:
+        level = "incompatible"
+        reasons.append(f"容器 {container} 不在兼容矩阵")
+    video = pj.get("video_codec")
+    if video and video not in VIDEO_CODECS_FULL | VIDEO_CODECS_DEVICE:
+        level = "incompatible"
+        reasons.append(f"视频编码 {video} 不在兼容矩阵")
+    elif video in VIDEO_CODECS_DEVICE:
+        if level == "ok":
+            level = "device_dependent"
+        reasons.append(f"视频编码 {video} 视设备解码器")
+    for a in pj.get("audio", []) or []:
+        codec = (a or {}).get("codec") or ""
+        if codec and codec not in AUDIO_CODECS_FULL | AUDIO_CODECS_DEVICE:
+            level = "incompatible"
+            reasons.append(f"音频编码 {codec} 不在兼容矩阵")
+        elif codec in AUDIO_CODECS_DEVICE and level != "incompatible":
+            level = "device_dependent"
+            reasons.append(f"音频编码 {codec} 视设备解码器")
+    return {"level": level, "reasons": reasons}
+
+
 def is_embedded_text_subtitle(codec: str) -> bool:
     return codec in EMBEDDED_TEXT_SUBTITLE_CODECS
 

@@ -38,6 +38,9 @@ export interface MediaItem {
   tags: { characters?: string[]; themes?: string[]; tags?: string[] }
   playable: boolean
   missing: boolean
+  /** Direct Play 三态预检（T-20260902-003-03）：ok 可直接播放 / device_dependent
+   *  可能不兼容（视设备解码器）/ incompatible 不可播放 / unknown 未探测 */
+  compat?: { level: 'ok' | 'device_dependent' | 'incompatible' | 'unknown'; reasons: string[] }
   metadata_version: number
   parent_edited: boolean
   /** 扫描期缩略海报是否就绪（GET /admin/media/{id}/poster） */

@@ -305,6 +305,19 @@ class PlaybackService:
             if event.get("subtitle_track_id") is not None:
                 pb.subtitle_track_id = event["subtitle_track_id"]
             pb.last_seen_at = now
+        elif kind == "error":
+            # 播放器错误上报（T-20260902-003-03）：此前被当未知事件拒收，家长无从
+            # 定位。只记录不改播放状态（TV 侧随后补 stopped/ended）；error_code
+            # （如 ERROR_CODE_DECODING_FAILED）随结构化日志可回溯媒体与挂载。
+            media = session.get(Media, pb.media_id)
+            logger.warning(
+                "播放器错误上报：playback_id=%s media_id=%s mount=%s title=%s "
+                "position_ms=%s error_code=%s",
+                pb.id, pb.media_id, media.mount_id if media else "?",
+                media.title if media else "?",
+                position_ms, event.get("error_code") or "unknown",
+            )
+            pb.last_seen_at = now
         elif kind in _TRANSITIONS:
             self._apply_transition(
                 session, pb, kind, position_ms, now, source="tv_event",

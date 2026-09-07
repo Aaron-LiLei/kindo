@@ -59,6 +59,9 @@ export const MediaCard = memo(function MediaCard({
         {!media.missing && !media.playable && (
           <span className="media-flag is-incompatible">不兼容</span>
         )}
+                {!media.missing && media.playable && media.compat?.level === 'device_dependent' && (
+          <span className="media-flag is-risk">可能不兼容</span>
+        )}
         {duration ? (
           <span className="media-duration">{duration}</span>
         ) : (

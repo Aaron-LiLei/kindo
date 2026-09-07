@@ -165,14 +165,18 @@ export function MediaDetail({
           {
             key: 'status',
             label: '状态',
-            children: media.missing ? (
-              <Badge status="warning" text="文件缺失" />
-            ) : media.playable ? (
-              <Badge status="success" text="可播放" />
-            ) : (
-              <Badge status="error" text="不兼容" />
-            ),
+            children: (() => {
+              if (media.missing) return <Badge status="warning" text="文件缺失" />
+              const level = media.compat?.level ?? (media.playable ? 'ok' : 'incompatible')
+              if (level === 'incompatible') return <Badge status="error" text="不兼容" />
+              if (level === 'device_dependent') return <Badge status="warning" text="可能不兼容" />
+              if (level === 'unknown') return <Badge status="default" text="未探测" />
+              return <Badge status="success" text="可播放" />
+            })(),
           },
+          ...(media.compat && media.compat.reasons.length
+            ? [{ key: 'compat_reasons', label: '兼容性详情', children: media.compat.reasons.join('；') }]
+            : []),
           ...(media.mount_label
             ? [{ key: 'mount', label: '来源', children: media.mount_label }]
             : []),

@@ -9,6 +9,56 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from ..models import Course, Episode, Lesson, Media, MediaMount, Series, SubtitleTrack, WatchHistory
+from .probe import compat_from_probe
+
+_CN_DIGITS = {"零": "0", "一": "1", "二": "2", "两": "2", "三": "3", "四": "4",
+              "五": "5", "六": "6", "七": "7", "八": "8", "九": "9"}
+
+
+def normalize_cn_numerals(term: str) -> str:
+    """中文数字 → 阿拉伯数字（2026-09-07）：儿童语音经 ASR 转写为「第一集」，
+    标题惯例是「第1集」——LIKE 匹配两侧需归一到同一形态。
+
+    连续中文数字串整体转换（含「十」复合：十五→15、二十→20）；「百」及以上
+    不展开（学龄前内容集数极少超过两位），其余字符原样保留。
+    """
+    out: list[str] = []
+    run: list[str] = []
+
+    def _flush() -> None:
+        if not run:
+            return
+        if "十" in run:
+            left, _, right = "".join(run).partition("十")
+            tens = int("".join(_CN_DIGITS[c] for c in left)) if left else 1
+            ones = int("".join(_CN_DIGITS[c] for c in right)) if right else 0
+            out.append(str(tens * 10 + ones))
+        else:
+            out.append("".join(_CN_DIGITS[c] for c in run))
+        run.clear()
+
+    for ch in term:
+        if ch in _CN_DIGITS or ch == "十":
+            run.append(ch)
+        else:
+            _flush()
+            out.append(ch)
+    _flush()
+    return "".join(out)
+
+
+def _active_mount_filter():
+    """只检索活跃挂载的内容：停用/已删除来源与浏览页同口径（全页面化决策），
+    否则桥断开时 AI 仍会把不可播放的内容推给孩子。
+
+    存储键两种形态（mounts.resolve_mount_id）：storage_id 非空时即为键；
+    页面行 storage_id 为空时键为 "page-{id}"。"""
+    active = sa_and(MediaMount.active.is_(True), MediaMount.deleted_at.is_(None))
+    named = select(MediaMount.storage_id).where(
+        MediaMount.storage_id.isnot(None), active)
+    derived = select("page-" + MediaMount.id).where(
+        MediaMount.storage_id.is_(None), active)
+    return or_(Media.mount_id.in_(named), Media.mount_id.in_(derived))
 
 
 def _tag_match_expr(term: str):
@@ -86,6 +136,7 @@ def search_media(
     id 决胜；游标 = (title, id)，长度可由 title 推导，支持翻页（§3.1）。"""
     terms = [t for t in query.replace("，", " ").split() if t.strip()]
     q = session.query(Media).filter(Media.missing.is_(False), Media.playable.is_(True))
+    q = q.filter(_active_mount_filter())
     q = q.filter(_hide_alternate_versions(session))
     if media_types:
         q = q.filter(Media.media_type.in_(media_types))
@@ -93,7 +144,12 @@ def search_media(
         q = q.filter(Media.language == language)
     if terms:
         for term in terms:
-            q = q.filter(_tag_match_expr(term))
+            # 每个词仍须命中（AND 语义不变）；中文数字归一变体扩展命中域
+            norm = normalize_cn_numerals(term)
+            exprs = [_tag_match_expr(term)]
+            if norm != term:
+                exprs.append(_tag_match_expr(norm))
+            q = q.filter(or_(*exprs))
     if tags:
         for tag in tags:
             q = q.filter(_tag_match_expr(tag))
@@ -469,8 +525,11 @@ def media_detail(session: Session, media: Media, profile_id: str) -> dict:
         "tags": media.tags_json or {},
         "playable": media.playable,
         # §1.2 兼容信息（2026-08-26 direct play 兜底）：探测明细出口，
-        # probe_mode=skip 的网络源无编码数据（probed=False）
+        # probe_mode=skip 的网络源无编码数据（probed=False）。
+        # level/reasons（2026-09-07 T-20260902-003-03）：三态预检，扫描期
+        # probe_json 派生，无需重扫——ok/device_dependent/incompatible/unknown
         "compatibility": {
+            **compat_from_probe(media.probe_json, media.media_type),
             "playable": media.playable,
             "probed": bool(media.probe_json) and "skipped" not in (media.probe_json or {}),
             "container": (media.probe_json or {}).get("container"),

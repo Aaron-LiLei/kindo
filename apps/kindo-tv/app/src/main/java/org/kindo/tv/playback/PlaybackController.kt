@@ -50,7 +50,8 @@ class PlaybackController(private val appContext: Context) {
     private var currentPlaybackId: String? = null
     private var lastReportedState: String = "idle"
 
-    var eventSender: ((eventId: String, playbackId: String, kind: String, positionMs: Long) -> Unit)? = null
+    var eventSender: ((eventId: String, playbackId: String, kind: String, positionMs: Long,
+                       errorCode: String?) -> Unit)? = null
     var trackChangedSender: ((playbackId: String, audioTrackId: String?, subtitleTrackId: String?) -> Unit)? = null
     var onPlayerError: ((String) -> Unit)? = null
 
@@ -97,12 +98,12 @@ class PlaybackController(private val appContext: Context) {
                         when {
                             isPlaying && lastReportedState != "started" -> {
                                 lastReportedState = "started"
-                                eventSender?.invoke(UUID.randomUUID().toString(), pid, "started", pos)
+                                eventSender?.invoke(UUID.randomUUID().toString(), pid, "started", pos, null)
                             }
                             !isPlaying && p.playbackState == Player.STATE_READY &&
                                 lastReportedState == "started" -> {
                                 lastReportedState = "paused"
-                                eventSender?.invoke(UUID.randomUUID().toString(), pid, "paused", pos)
+                                eventSender?.invoke(UUID.randomUUID().toString(), pid, "paused", pos, null)
                             }
                         }
                     }
@@ -113,7 +114,7 @@ class PlaybackController(private val appContext: Context) {
                         if (playbackState == Player.STATE_ENDED) {
                             _playbackEnded.value = true
                             val pid = currentPlaybackId ?: return
-                            eventSender?.invoke(UUID.randomUUID().toString(), pid, "ended", p.currentPosition)
+                            eventSender?.invoke(UUID.randomUUID().toString(), pid, "ended", p.currentPosition, null)
                         }
                     }
 
@@ -122,7 +123,7 @@ class PlaybackController(private val appContext: Context) {
                         _isPlaying.value = false
                         val pid = currentPlaybackId
                         if (pid != null) {
-                            eventSender?.invoke(UUID.randomUUID().toString(), pid, "error", p.currentPosition)
+                            eventSender?.invoke(UUID.randomUUID().toString(), pid, "error", p.currentPosition, error.errorCodeName)
                         }
                         onPlayerError?.invoke(error.errorCodeName)
                     }
@@ -204,7 +205,7 @@ class PlaybackController(private val appContext: Context) {
                 delay(5000)
                 val pid = currentPlaybackId ?: continue
                 if (p.isPlaying) {
-                    eventSender?.invoke(UUID.randomUUID().toString(), pid, "progress", p.currentPosition)
+                    eventSender?.invoke(UUID.randomUUID().toString(), pid, "progress", p.currentPosition, null)
                 }
             }
         }
@@ -256,7 +257,7 @@ class PlaybackController(private val appContext: Context) {
         _playbackEnded.value = false
         p.seekTo(ms.coerceIn(0, if (p.duration > 0) p.duration else Long.MAX_VALUE))
         currentPlaybackId?.let {
-            eventSender?.invoke(UUID.randomUUID().toString(), it, "seeked", p.currentPosition)
+            eventSender?.invoke(UUID.randomUUID().toString(), it, "seeked", p.currentPosition, null)
         }
     }
 
@@ -269,7 +270,7 @@ class PlaybackController(private val appContext: Context) {
         val pid = currentPlaybackId
         progressJob?.cancel()
         if (pid != null) {
-            eventSender?.invoke(UUID.randomUUID().toString(), pid, "stopped", player?.currentPosition ?: 0)
+            eventSender?.invoke(UUID.randomUUID().toString(), pid, "stopped", player?.currentPosition ?: 0, null)
         }
         player?.stop()
         player?.clearMediaItems()

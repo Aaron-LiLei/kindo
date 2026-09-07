@@ -134,14 +134,14 @@ export function MediaListView({
       title: '状态',
       key: 'status',
       width: 100,
-      render: (_, m) =>
-        m.missing ? (
-          <Badge status="warning" text="文件缺失" />
-        ) : m.playable ? (
-          <Badge status="success" text="可播放" />
-        ) : (
-          <Badge status="error" text="不兼容" />
-        ),
+      render: (_, m) => {
+        if (m.missing) return <Badge status="warning" text="文件缺失" />
+        const level = m.compat?.level ?? (m.playable ? 'ok' : 'incompatible')
+        if (level === 'incompatible') return <Badge status="error" text="不兼容" />
+        if (level === 'device_dependent') return <Badge status="warning" text="可能不兼容" />
+        if (level === 'unknown') return <Badge status="default" text="未探测" />
+        return <Badge status="success" text="可播放" />
+      },
     },
     {
       title: '操作',

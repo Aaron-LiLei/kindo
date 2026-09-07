@@ -243,6 +243,11 @@ body {
   color: #cf1322;
 }
 
+.media-flag.is-risk {
+  background: #fffbe6;
+  color: #d46b08;
+}
+
 .media-info {
   padding: 8px 10px 10px;
 }

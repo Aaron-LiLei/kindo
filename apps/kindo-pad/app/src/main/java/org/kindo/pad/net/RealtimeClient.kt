@@ -173,13 +173,15 @@ class RealtimeClient(
                 .put("option_id", optionId).toString())
     }
 
-    fun sendPlaybackEvent(eventId: String, playbackId: String, kind: String, positionMs: Long) {
-        sendOrQueue(
-            JSONObject().put("type", "playback.$kind")
-                .put("event_id", eventId)
-                .put("playback_id", playbackId)
-                .put("position_ms", positionMs)
-                .put("player_state", kind).toString())
+    fun sendPlaybackEvent(eventId: String, playbackId: String, kind: String, positionMs: Long,
+                          errorCode: String? = null) {
+        val payload = JSONObject().put("type", "playback.$kind")
+            .put("event_id", eventId)
+            .put("playback_id", playbackId)
+            .put("position_ms", positionMs)
+            .put("player_state", kind)
+        if (!errorCode.isNullOrEmpty()) payload.put("error_code", errorCode)
+        sendOrQueue(payload.toString())
     }
 
     fun sendTransitionSelect(transitionId: String, optionType: String) {
