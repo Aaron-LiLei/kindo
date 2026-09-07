@@ -124,9 +124,15 @@ class ConversationManager:
             s = self._sessions.get(session_id)
             if s is not None:
                 s.state = STATE_ENDED
-        if s is not None and self._usage is not None:
+        if s is not None:
+            self._finish(s)
+
+    def _finish(self, s: ConversationSession) -> None:
+        """统一收尾（主动结束与过期 sweep 共用）：计量收行 + 结束钩子
+        （TTS 音频缓存清理、最近讨论对象沉淀——技术方案 §6.7/§6.3）。"""
+        if self._usage is not None:
             self._usage.record_end(s)
-        if s is not None and self._on_end is not None:
+        if self._on_end is not None:
             self._on_end(s)
 
     def all_sessions(self) -> list[ConversationSession]:
@@ -149,9 +155,8 @@ class ConversationManager:
                 sid: s for sid, s in self._sessions.items()
                 if not (sid in expired or s.state in (STATE_ENDED, STATE_EXPIRED))
             }
-        if self._usage is not None:
-            for s in ended:
-                self._usage.record_end(s)
+        for s in ended:
+            self._finish(s)
         return len(expired)
 
     def drop_all(self) -> None:

@@ -190,9 +190,18 @@ def create_app(cfg: Config | None = None) -> FastAPI:
     hub_tts = HubTtsClient(cfg.tts_endpoint, cfg.tts_timeout_seconds)
     tts = TtsService(hub_tts=hub_tts, voice_store=voice_store)
     asr = AsrProviderClient(cfg.asr_endpoint, cfg.asr_timeout_seconds)
+
+    from .conversation.recent import capture_from_session
+
+    def _on_conversation_end(s) -> None:
+        # 会话收尾（主动结束与过期 sweep 共用，§6.7）：TTS 音频缓存清理 +
+        # 最近讨论对象沉淀（Recent Media Context，T-20260902-003-01）
+        tts.drop_tts(s.tts_to_session.keys())
+        capture_from_session(db.session_factory, s)
+
     manager = ConversationManager(
         cfg, usage=conversation_usage,
-        on_end=lambda s: tts.drop_tts(s.tts_to_session.keys()),
+        on_end=_on_conversation_end,
     )
 
     from .admin.auth import AdminAuthService
