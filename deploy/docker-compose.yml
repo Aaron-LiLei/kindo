@@ -1,8 +1,13 @@
+# 开发/源码构建用 Compose（本地 build）。发行部署用 deploy/release/docker-compose.yml
+# （直接拉取 ghcr.io 官方镜像，见 docs/DEPLOY.md）。
+#
+# 模型不进镜像（T-20260902-003-06）：asr/tts 首次启动自动下载模型到模型卷
+# 并校验持久化；开发机已有本地模型目录时直接挂载即可跳过下载。
 services:
   kindo-hub:
     build:
-      context: ../apps/kindo-hub
-      dockerfile: ../../deploy/kindo-hub.Dockerfile
+      context: ..
+      dockerfile: deploy/kindo-hub.Dockerfile
     image: kindo-hub:0.1.0
     container_name: kindo-hub
     restart: unless-stopped
@@ -27,8 +32,8 @@ services:
 
   kindo-asr:
     build:
-      context: ../apps/kindo-asr
-      dockerfile: ../../deploy/kindo-asr.Dockerfile
+      context: ..
+      dockerfile: deploy/kindo-asr.Dockerfile
     image: kindo-asr:0.1.0
     container_name: kindo-asr
     restart: unless-stopped
@@ -38,7 +43,10 @@ services:
       # 手工补写（重建保留）。热词在识别器初始化时加载——修改后需
       # docker compose restart kindo-asr 生效。
       KINDO_ASR_HOTWORDS_FILE: /hub-data/hotwords.txt
+      # 模型自动准备（T-20260902-003-06）：默认从官方模型资产下载到 /models；
+      # 开发机本地已有模型时，用下面的卷挂载直接提供（校验通过即不下载）
     volumes:
+      - ../apps/kindo-asr/model:/models      # 开发机本地模型（镜像不内置模型）
       - ./config:/app/config:ro
       - ./data/hub:/hub-data:ro             # Hub 生成的 hotwords.txt（只读）
     # 仅容器网络内可达：原始语音只暴露给 Hub（架构 §13）
@@ -50,11 +58,13 @@ services:
   # 功能时可整段注释（kindo.yaml tts.endpoint 留空即不启用）。
   kindo-tts:
     build:
-      context: ../apps/kindo-tts
-      dockerfile: ../../deploy/kindo-tts.Dockerfile
+      context: ..
+      dockerfile: deploy/kindo-tts.Dockerfile
     image: kindo-tts:0.1.0
     container_name: kindo-tts
     restart: unless-stopped
+    volumes:
+      - ../apps/kindo-tts/model:/models      # 开发机本地模型（镜像不内置模型）
     # 仅容器网络内可达：家长声音样本与合成结果只暴露给 Hub（PRD TTS-007）
     expose:
       - "8092"

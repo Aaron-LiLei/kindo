@@ -1,0 +1,125 @@
+# 版本化 Release（T-20260902-003-05/06）：推送 tag v* 触发。
+# 产出：ghcr.io/aaron-lilei/kindo-{hub,asr,tts} 多架构镜像（amd64/arm64）、
+# 签名 TV/Pad APK、发行部署工件（compose/.env 模板/配置模板/校验值/升级说明）。
+# 模型资产（asr/tts tar.gz）不随 CI 构建（模型不入库）——首次发布前由维护者
+# 执行 `sh deploy/models/package-models.sh --upload` 上传到 model-assets-v1。
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  GHCR_OWNER: aaron-lilei
+
+jobs:
+  admin:
+    name: Admin 构建产物
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/kindo-admin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/kindo-admin/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: admin-dist
+          path: apps/kindo-admin/dist
+
+  images:
+    name: 多架构镜像（amd64/arm64）
+    runs-on: ubuntu-latest
+    needs: admin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: admin-dist
+          path: apps/kindo-hub/admin_dist
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: 构建并推送 kindo-hub / kindo-asr / kindo-tts
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          for svc in hub asr tts; do
+            docker buildx build \
+              --platform linux/amd64,linux/arm64 \
+              --file "deploy/kindo-${svc}.Dockerfile" \
+              --tag "ghcr.io/${GHCR_OWNER}/kindo-${svc}:${VERSION}" \
+              --tag "ghcr.io/${GHCR_OWNER}/kindo-${svc}:latest" \
+              --push \
+              .
+          done
+
+  android:
+    name: Android APK（TV / Pad，release 签名）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: TV assembleRelease
+        working-directory: apps/kindo-tv
+        run: ./gradlew assembleRelease
+      - name: Pad assembleRelease
+        working-directory: apps/kindo-pad
+        run: ./gradlew assembleRelease
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-apks
+          path: |
+            apps/kindo-tv/app/build/outputs/apk/release/app-release.apk
+            apps/kindo-pad/app/build/outputs/apk/release/app-release.apk
+
+  release:
+    name: GitHub Release（工件 + 校验值 + 升级说明）
+    runs-on: ubuntu-latest
+    needs: [images, android]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-apks
+          path: android-apks
+      - name: 组装发行资产
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          mkdir -p dist-assets
+          cp android-apks/kindo-tv/app/build/outputs/apk/release/app-release.apk \
+             "dist-assets/kindo-tv-${VERSION}.apk"
+          cp android-apks/kindo-pad/app/build/outputs/apk/release/app-release.apk \
+             "dist-assets/kindo-pad-${VERSION}.apk"
+          cp deploy/release/docker-compose.yml dist-assets/
+          cp deploy/release/.env.example dist-assets/env.example
+          cp deploy/release/RELEASE-NOTES.md dist-assets/
+          cp deploy/kindo.example.yaml dist-assets/
+          cd dist-assets
+          sha256sum -- * > SHA256SUMS.txt
+      - env:
+          VERSION: ${{ github.ref_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$VERSION" --verify-tag \
+            --title "Kindo $VERSION" \
+            --notes "多架构容器镜像（amd64/arm64）与 Android APK 发行。安装/升级说明见 RELEASE-NOTES.md 与 docs/DEPLOY.md；模型资产说明见 deploy/models/。" \
+            dist-assets/*

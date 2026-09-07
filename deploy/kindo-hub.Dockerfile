@@ -1,20 +1,21 @@
 # syntax=docker/dockerfile:1
 # kindo-hub：Python FastAPI 模块化单体 + Web Admin 静态资源 + FFmpeg 系统依赖（技术方案 §1）
-# 依赖由 requirements.lock 全量锁定（uv pip compile --universal），构建可复现
+# 依赖由 requirements.lock 全量锁定（uv pip compile --universal），构建可复现。
+# 构建上下文 = 仓库根：docker build -f deploy/kindo-hub.Dockerfile .
 FROM python:3.11-slim-bookworm
 
-ARG ADMIN_DIST=admin_dist
+ARG ADMIN_DIST=apps/kindo-hub/admin_dist
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 # 依赖层先行：源码改动不失效依赖缓存
-COPY requirements.lock ./requirements.lock
+COPY apps/kindo-hub/requirements.lock ./requirements.lock
 RUN pip install --no-cache-dir -r requirements.lock
-COPY pyproject.toml alembic.ini ./
-COPY alembic ./alembic
-COPY src ./src
+COPY apps/kindo-hub/pyproject.toml apps/kindo-hub/alembic.ini ./
+COPY apps/kindo-hub/alembic ./alembic
+COPY apps/kindo-hub/src ./src
 # Web Admin 构建产物（apps/kindo-admin npm run build 的输出）
 COPY ${ADMIN_DIST} ./admin_dist
 RUN pip install --no-cache-dir --no-deps . \

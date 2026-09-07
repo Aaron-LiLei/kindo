@@ -1,0 +1,69 @@
+# 童映 Kindo 标准发行部署（T-20260902-003-05）：直接拉取官方镜像启动，无需本地构建。
+#
+# 使用：把本文件、.env 与 kindo.example.yaml 放到同一目录，按 .env.example 配置后：
+#   docker compose up -d
+# 升级：改 .env 的 KINDO_VERSION 后 docker compose pull && docker compose up -d
+# 详见 docs/DEPLOY.md（升级/回滚/卸载/离线模型放置）。
+#
+# 目录约定（相对本文件所在目录，可经 .env 覆盖）：
+#   data/hub          Hub 数据（SQLite/日志/缓存/家长声音样本）——必须本地文件系统
+#   data/models/asr   ASR 模型卷（首次启动自动下载+校验持久化；升级不重复下载）
+#   data/models/tts   TTS 模型卷（可选服务）
+#   config/           kindo.yaml（从 kindo.example.yaml 复制修改）
+#   ${MEDIA_DIR}      家庭媒体目录（只读挂载；来源在后台「媒体库→来源与扫描」录入）
+services:
+  kindo-hub:
+    image: ghcr.io/aaron-lilei/kindo-hub:${KINDO_VERSION:-latest}
+    container_name: kindo-hub
+    restart: unless-stopped
+    ports:
+      - "${KINDO_PORT:-8090}:8090"
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      # LLM Provider 也可完全经 Web 后台「AI 模型」页录入（推荐）；此处为环境变量方式
+      KINDO_LLM_BASE_URL: ${KINDO_LLM_BASE_URL:-}
+      KINDO_LLM_API_KEY: ${KINDO_LLM_API_KEY:-}
+      KINDO_LLM_MODEL: ${KINDO_LLM_MODEL:-}
+      # 首次初始化管理员；不设则自动生成一次性 token 写入 data/bootstrap/
+      KINDO_ADMIN_BOOTSTRAP_TOKEN: ${KINDO_ADMIN_BOOTSTRAP_TOKEN:-}
+    volumes:
+      - ./data/hub:/data
+      - ./config:/config:ro
+      - ${MEDIA_DIR:?请在 .env 中设置 MEDIA_DIR（家庭媒体目录）}:/media/family:ro
+    depends_on:
+      kindo-asr:
+        condition: service_healthy
+
+  kindo-asr:
+    image: ghcr.io/aaron-lilei/kindo-asr:${KINDO_VERSION:-latest}
+    container_name: kindo-asr
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      KINDO_ASR_HOTWORDS_FILE: /hub-data/hotwords.txt
+      # 模型自动准备（T-20260902-003-06）：默认从官方模型资产下载到 /models 并
+      # 校验持久化；镜像内已内置默认 URL 与 SHA256。离线部署：把模型包解压进
+      # data/models/asr（或 .env 设 SOURCE_TARBALL_URL 指向内网地址）后重启。
+      SOURCE_TARBALL_URL: ${ASR_MODEL_URL:-}
+    volumes:
+      - ./data/models/asr:/models
+      - ./data/hub:/hub-data:ro             # Hub 生成的语音热词（只读）
+    # 仅容器网络内可达：原始语音只暴露给 Hub（架构 §13）
+    expose:
+      - "8081"
+
+  # 可选克隆 TTS（家长声音）：不需要时删除本段或 compose --profile tts 启动。
+  # 未启用/模型未就绪时 Hub 自动回退 Android 系统 TTS，其余功能不受影响。
+  kindo-tts:
+    image: ghcr.io/aaron-lilei/kindo-tts:${KINDO_VERSION:-latest}
+    container_name: kindo-tts
+    restart: unless-stopped
+    profiles: ["tts"]
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      SOURCE_TARBALL_URL: ${TTS_MODEL_URL:-}
+    volumes:
+      - ./data/models/tts:/models
+    # 仅容器网络内可达：家长声音样本与合成结果只暴露给 Hub（PRD TTS-007）
+    expose:
+      - "8092"

@@ -1,0 +1,6 @@
+# Kindo 模型清单（SHA256SUMS 格式；目录行以 / 结尾=存在性检查）
+# tarball-url: https://github.com/aaron-lilei/kindo/releases/download/model-assets-v1/kindo-asr-paraformer-chuan-v1.tar.gz
+# tarball-sha256: f37630e62ce36600081a886feb3e76eb61df64560037670cabce02c286c34b00
+# 根目录: apps\kindo-asr\model
+53813ee1d41722cc6370a571c887e6d0b391d25b8312cf714a31af85ea603812  model.int8.onnx
+59aba8873a2ed1e122c25fee421e25f283b63290efbde85c1f01a853d83cb6e6  tokens.txt

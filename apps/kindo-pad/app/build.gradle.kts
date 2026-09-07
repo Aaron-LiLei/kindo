@@ -18,9 +18,19 @@ android {
         versionName = "0.1.0"
     }
 
+    // 自发布签名（升级链连续性；见 deploy/signing/README.md）
+    signingConfigs {
+        create("release") {
+            storeFile = rootProject.file("../../deploy/signing/kindo-release.keystore")
+            storePassword = "kindo-release-key"
+            keyAlias = "kindo"
+            keyPassword = "kindo-release-key"
+        }
+    }
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
         }
     }
     compileOptions {

@@ -76,6 +76,8 @@ Kindo 的答案：让孩子用最自然的方式（说话）使用家庭自己�
 
 ## 快速开始
 
+> **免构建部署**（自 v0.1.0 Release 起可用）：下载 Release 内的 `docker-compose.yml` + `env.example`，设置媒体目录后 `docker compose up -d`——官方多架构镜像（amd64/arm64）、ASR 模型首次启动自动下载并校验持久化、TV/Pad APK 随 Release 提供。完整步骤与升级/回滚约定见 [docs/DEPLOY.md](docs/DEPLOY.md)。
+
 ### 你需要准备
 
 | 需要 | 说明 |

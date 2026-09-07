@@ -1,0 +1,10 @@
+# Kindo 模型清单（SHA256SUMS 格式；目录行以 / 结尾=存在性检查）
+# tarball-url: https://github.com/aaron-lilei/kindo/releases/download/model-assets-v1/kindo-tts-zipvoice-distill-v1.tar.gz
+# tarball-sha256: 92b5d851450c47dfc42ae00b60ab5924c30093597b86146abcb68d803b33b4dd
+# 根目录: apps\kindo-tts\model
+f2de9a761a85e5ddd125dee6e05bad1c7ee92c11b83b4d775dab216a6aa41379  encoder.int8.onnx
+3cc2e08a96610d7ea1b227398e97cdbbe0414499741d3aec0b8113db2a2ab251  decoder.int8.onnx
+ce98c1afc5f7a20c2484dffdd68a1fff0a4a2cc707328833750c4476c37cdbda  tokens.txt
+c94b049d970e971acdc2a7e5e7b23ca594222a9d640e417c711f2ad1e7bb7d46  lexicon.txt
+bcb3b970e384161c4d634f0bb9e999ff1c471b34c9bc0b1049a5014065ed3cc0  vocos_24khz.onnx
+0000000000000000000000000000000000000000000000000000000000000000  espeak-ng-data/
