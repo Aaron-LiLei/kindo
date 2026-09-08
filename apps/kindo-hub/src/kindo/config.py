@@ -168,6 +168,14 @@ def load_config() -> Config:
         raw.setdefault("server", {})["port"] = int(os.environ["KINDO_PORT"])
     if "KINDO_DATA_DIR" in os.environ:
         raw["data_dir"] = os.environ["KINDO_DATA_DIR"]
+    if "KINDO_TIMEZONE" in os.environ:
+        raw["timezone"] = os.environ["KINDO_TIMEZONE"]
+    # 容器编排场景（NAS 应用商店一键安装）：无配置文件时经环境变量打通
+    # asr/tts 服务发现（2026-09-08；层级不变：环境变量 > 配置文件 > 默认值）
+    if "KINDO_ASR_ENDPOINT" in os.environ:
+        raw.setdefault("asr", {})["endpoint"] = os.environ["KINDO_ASR_ENDPOINT"]
+    if "KINDO_TTS_ENDPOINT" in os.environ:
+        raw.setdefault("tts", {})["endpoint"] = os.environ["KINDO_TTS_ENDPOINT"]
     cfg = Config(raw, path)
     cfg.data_dir.mkdir(parents=True, exist_ok=True)
     (cfg.data_dir / "logs").mkdir(parents=True, exist_ok=True)

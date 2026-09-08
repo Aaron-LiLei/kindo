@@ -47,6 +47,10 @@ docker compose up -d
 - 模型资产发布约定：`model-assets-v1` Release 承载模型包；维护者更新模型时运行
   `sh deploy/models/package-models.sh --upload` 并同步更新镜像内的默认校验值。
 
+> **Windows Docker Desktop 用户**：SQLite WAL 在 Windows 绑定挂载（9p）上不可靠，
+> 会出现 `unable to open database file`——请把 `data/hub` 改用命名卷（如
+> `kindo-hub-data:/data`）或置于 WSL2 文件系统。Linux NAS 本地盘（ext4）无此问题。
+
 ## 二、源码构建部署（开发者）
 
 ```bash

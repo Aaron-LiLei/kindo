@@ -21,6 +21,7 @@ COPY ${ADMIN_DIST} ./admin_dist
 RUN pip install --no-cache-dir --no-deps . \
     && useradd --system --uid 10001 --no-create-home kindo \
     && chown -R kindo:kindo /app
+    && install -d -o kindo -g kindo /data
 
 ENV KINDO_CONFIG=/config/kindo.yaml
 EXPOSE 8090

@@ -2,6 +2,16 @@
 
 面向部署者与开发者的显著变更记录。格式参照 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)；日期为本地时区。
 
+## [0.1.2] — 2026-09-08 · 容器实跑修复
+
+- 修复：容器镜像内 Alembic 迁移路径失效（pip 安装布局下定位不到 alembic.ini），
+  Hub 启动即崩——改为按安装布局多候选定位（源码布局 / WORKDIR /app）
+- 修复：Web Admin 静态资源在容器内同样路径失效（/admin 404）——同上多候选定位
+- 新增：容器环境变量覆盖 KINDO_ASR_ENDPOINT / KINDO_TTS_ENDPOINT / KINDO_TIMEZONE
+  （NAS 应用商店一键安装免配置文件；层级不变：环境变量 > 文件 > 默认值）
+- 改进：镜像预建 /data、/models 并赋属主，命名卷部署无需手工 chown
+- 文档：Windows Docker Desktop 绑定挂载上 SQLite WAL 不可靠的说明（NAS 本地盘无此问题）
+
 ## [0.1.1] — 2026-09-08 · 部署链路补丁
 
 - 修复：kindo-tts 镜像模型自动准备时 `espeak-ng-data/` 只建目录不复制内容，

@@ -14,6 +14,7 @@ COPY apps/kindo-tts/src ./src
 RUN pip install --no-cache-dir --no-deps . \
     && useradd --system --uid 10001 --no-create-home kindo \
     && chown -R kindo:kindo /app
+    && install -d -o kindo -g kindo /models
 
 # 模型自动准备：脚本+清单进镜像，模型卷 /models 运行时挂载
 COPY deploy/models/fetch_model.py deploy/models/tts-model.manifest /opt/kindo/

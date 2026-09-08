@@ -82,8 +82,22 @@ class AppState:
 
 
 def _run_migrations(cfg: Config) -> bool:
-    """启动先校验/执行 Alembic 迁移，再开放写 API（§13.1）。"""
-    alembic_ini = Path(__file__).resolve().parent.parent.parent / "alembic.ini"
+    """启动先校验/执行 Alembic 迁移，再开放写 API（§13.1）。
+
+    alembic.ini 按安装布局定位：源码/venv -e 布局在包目录上三级（apps/kindo-hub/），
+    容器 pip 安装布局在 WORKDIR /app（Dockerfile 与包分离 COPY）。
+    """
+    candidates = [
+        Path(__file__).resolve().parent.parent.parent / "alembic.ini",
+        Path.cwd() / "alembic.ini",
+        Path("/app/alembic.ini"),
+    ]
+    alembic_ini = next((p for p in candidates if p.is_file()), None)
+    if alembic_ini is None:
+        raise RuntimeError(
+            "alembic.ini 未找到（候选："
+            + ", ".join(str(p) for p in candidates)
+            + "）——安装布局异常")
     aconfig = AlembicConfig(str(alembic_ini))
     aconfig.set_main_option("script_location", str(alembic_ini.parent / "alembic"))
     aconfig.attributes["db_url"] = f"sqlite:///{cfg.db_path}"
@@ -255,7 +269,7 @@ def create_app(cfg: Config | None = None) -> FastAPI:
     # 异步部分复用编排循环（TtsService 克隆 client 的唯一事件循环）
     transition.bind(llm=llm, tts=tts, submit=orchestrator.submit)
 
-    app = FastAPI(title="Kindo Hub", version="0.1.0", docs_url="/api/docs", openapi_url="/api/openapi.json")
+    app = FastAPI(title="Kindo Hub", version="0.1.2", docs_url="/api/docs", openapi_url="/api/openapi.json")
     app.state.kindo = state
 
     # ---------- 中间件：request_id + 统一错误 envelope（§2.3/§15.2） ----------
@@ -301,8 +315,16 @@ def create_app(cfg: Config | None = None) -> FastAPI:
     app.include_router(ws.router)
 
     # ---------- Web Admin 静态资源（构建产物并入 hub，§1 技术栈） ----------
-    admin_dist = Path(__file__).resolve().parent.parent.parent / "admin_dist"
-    if admin_dist.is_dir():
+    # 布局候选同 _run_migrations：源码/venv -e 为包上三级，容器为 /app
+    admin_dist = next(
+        (p for p in (
+            Path(__file__).resolve().parent.parent.parent / "admin_dist",
+            Path.cwd() / "admin_dist",
+            Path("/app/admin_dist"),
+        ) if p.is_dir()),
+        None,
+    )
+    if admin_dist is not None:
         app.mount("/admin", StaticFiles(directory=str(admin_dist), html=True), name="admin")
     else:
         @app.get("/admin")
