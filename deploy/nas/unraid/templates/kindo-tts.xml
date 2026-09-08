@@ -1,0 +1,28 @@
+<Container version="2">
+  <Name>kindo-tts</Name>
+  <Repository>ghcr.io/aaron-lilei/kindo-tts:latest</Repository>
+  <Registry>https://ghcr.io/aaron-lilei/kindo-tts</Registry>
+  <Network>bridge</Network>
+
+  <Shell>bash</Shell>
+  <Privileged>false</Privileged>
+  <Icon>https://raw.githubusercontent.com/Aaron-LiLei/kindo-unraid/main/icon.svg</Icon>
+
+  <Overview>可选组件：童映 Kindo 家长声音克隆（ZipVoice-Distill 零样本，纯 CPU 离线）。家长在后台朗读约 10 秒文本后，AI 回复可用家长的声音播报。声纹仅内存保存、样本不出家庭网络（PRD TTS-007）。
+首次启动自动下载模型（约 150MB，SHA256 校验后持久化）。不安装本容器时 kindo-hub 自动回退 Android 系统 TTS，其余功能不受影响。</Overview>
+  <Project>https://github.com/Aaron-LiLei/kindo</Project>
+  <TemplateURL>https://raw.githubusercontent.com/Aaron-LiLei/kindo-unraid/main/templates/kindo-tts.xml</TemplateURL>
+  <ReadMe>https://raw.githubusercontent.com/Aaron-LiLei/kindo/main/docs/DEPLOY.md</ReadMe>
+  <Category>Other</Category>
+  <ExtraSearchTerms>kindo tts voice clone 家长声音 克隆 童映</ExtraSearchTerms>
+  <Requires>可选组件，需与 kindo-hub 配合；安装后在 kindo-hub 环境变量 KINDO_TTS_ENDPOINT 填 http://172.17.0.1:18092；首次启动需外网下载模型（约 150MB）。</Requires>
+  <Changes>### 2026-09-08
+- 修复模型自动准备 espeak-ng-data 目录只建目录不复制内容的问题（v0.1.1）
+- 首发内容：ZipVoice-Distill 家长声音克隆 + 模型自动准备</Changes>
+  <Date>2026-09-08</Date>
+  <License>MIT</License>
+
+  <Config Name="模型目录" Target="/models" Default="/mnt/user/appdata/kindo-tts/models" Mode="rw" Description="TTS 模型持久化目录（首启自动下载+校验）。Linux 需对容器可写。" Type="Path" Display="always" Required="true" Mask="false"/>
+  <Config Name="TTS 端口" Target="8092" Default="18092" Mode="tcp" Description="发布到宿主的端口（kindo-hub 的 KINDO_TTS_ENDPOINT 默认 http://172.17.0.1:18092）。仅家庭局域网。" Type="Port" Display="always" Required="true" Mask="false"/>
+  <Config Name="模型包地址覆盖" Target="SOURCE_TARBALL_URL" Default="" Mode="-" Description="可选：内网镜像/离线环境覆盖官方模型包下载地址；留空使用官方源。" Type="Variable" Display="advanced" Required="false" Mask="false"/>
+</Container>

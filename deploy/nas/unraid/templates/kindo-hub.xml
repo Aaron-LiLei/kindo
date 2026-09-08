@@ -1,0 +1,33 @@
+<Container version="2">
+  <Name>kindo-hub</Name>
+  <Repository>ghcr.io/aaron-lilei/kindo-hub:latest</Repository>
+  <Registry>https://ghcr.io/aaron-lilei/kindo-hub</Registry>
+  <Network>bridge</Network>
+
+  <Shell>bash</Shell>
+  <Privileged>false</Privileged>
+  <Icon>https://raw.githubusercontent.com/Aaron-LiLei/kindo-unraid/main/icon.svg</Icon>
+
+  <WebUI>http://[IP]:[PORT:8090]</WebUI>
+  <Overview>童映 Kindo 核心服务：家庭媒体库（来源页面管理 / 增量扫描 / TMDB 匹配）、儿童语音对话编排（本地 ASR + 受控 LLM 工具调用）、屏幕时间规则（Policy）、成长接力与家长后台。数据（SQLite/配置/家长声音样本）全部保存在本机，儿童原始语音不出家门。
+安装前提：先安装 kindo-asr（语音识别必需）。安装后打开 WebUI 初始化管理员，媒体来源指向下方挂载的媒体目录（容器内 /media/family），并在「AI 模型」页录入 LLM Provider。</Overview>
+  <Project>https://github.com/Aaron-LiLei/kindo</Project>
+  <TemplateURL>https://raw.githubusercontent.com/Aaron-LiLei/kindo-unraid/main/templates/kindo-hub.xml</TemplateURL>
+  <ReadMe>https://raw.githubusercontent.com/Aaron-LiLei/kindo/main/docs/DEPLOY.md</ReadMe>
+  <Category>MediaApp:Video</Category>
+  <ExtraSearchTerms>kids children media voice assistant 童映 家庭 儿童电视</ExtraSearchTerms>
+  <Requires>需先安装 kindo-asr（语音识别）；「AI 模型」页需一个 OpenAI 兼容 LLM Provider；首次启动会在数据库执行自动迁移。</Requires>
+  <Changes>### 2026-09-08
+- 支持 KINDO_ASR_ENDPOINT / KINDO_TTS_ENDPOINT / KINDO_TIMEZONE 环境变量覆盖（NAS 一键安装免配置文件）
+- v0.1.1 部署链路补丁与 v0.1.0 首发内容（详见仓库 CHANGELOG.md）</Changes>
+  <Date>2026-09-08</Date>
+  <License>MIT</License>
+
+  <Config Name="WebUI 端口" Target="8090" Default="8090" Mode="tcp" Description="家长后台 / TV / Pad 接入端口（仅建议家庭局域网）。" Type="Port" Display="always" Required="true" Mask="false"/>
+  <Config Name="Hub 数据目录" Target="/data" Default="/mnt/user/appdata/kindo-hub/data" Mode="rw" Description="SQLite 数据库、管理员引导令牌、家长声音样本、语音热词、日志（必须本地文件系统，勿放网络共享）。Linux 需 chown 99:100 或对 kindo-hub 数据目录放开写权限。" Type="Path" Display="always" Required="true" Mask="false"/>
+  <Config Name="家庭媒体目录" Target="/media/family" Default="" Mode="ro" Description="你的儿童媒体根目录（视频/音频）。安装后在后台「媒体库→来源与扫描」录入容器内路径 /media/family。" Type="Path" Display="always" Required="true" Mask="false"/>
+  <Config Name="ASR 服务地址" Target="KINDO_ASR_ENDPOINT" Default="http://172.17.0.1:18081" Mode="-" Description="kindo-asr 的访问地址（默认走宿主网关 + asr 发布端口 18081；asr 容器与 hub 同为自定义网络时可改为 http://kindo-asr:8081）。" Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="TTS 服务地址" Target="KINDO_TTS_ENDPOINT" Default="" Mode="-" Description="可选家长声音克隆 kindo-tts 的地址（如 http://172.17.0.1:18092）；留空 = 使用 Android 系统 TTS。" Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="时区" Target="KINDO_TIMEZONE" Default="Asia/Shanghai" Mode="-" Description="家庭时区（屏幕时间规则按本地日界）。" Type="Variable" Display="always" Required="false" Mask="false"/>
+  <Config Name="初始化管理员令牌" Target="KINDO_ADMIN_BOOTSTRAP_TOKEN" Default="" Mode="-" Description="可选：预设首次初始化管理员的引导令牌；留空则自动生成一次性令牌写入 data/hub/bootstrap/。" Type="Variable" Display="advanced" Required="false" Mask="false"/>
+</Container>

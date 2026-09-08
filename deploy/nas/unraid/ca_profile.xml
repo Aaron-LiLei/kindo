@@ -1,0 +1,25 @@
+<CommunityApplications>
+  <Profile>
+    **童映 Kindo** —— 让 3~6 岁孩子用自己的话看家里自己的内容。
+
+    语音说「我想看汪汪队」，AI 在**你自己 NAS 的媒体库**里找片、澄清、播放；
+    屏幕时间由规则系统管理（到点不生硬切断，而是把兴趣引向故事/活动/对话）。
+    儿童语音全程本地识别（Paraformer），不出家门；远程 LLM 只接收完成任务
+    所需的最小文本。支持 Android TV（7.0+）与 Android 平板（8.0+）儿童端。
+
+    **本仓库包含 3 个容器**（推荐全部安装）：
+    - **kindo-hub**：核心服务（媒体库 / 规则 / AI 编排 / 家长后台 http://IP:8090）
+    - **kindo-asr**：本地中文语音识别（必需；首次启动自动下载模型约 217MB 并校验持久化）
+    - **kindo-tts**：可选家长声音克隆（不装则自动回退系统语音）
+
+    安装顺序：先装 kindo-asr，再装 kindo-hub（默认环境变量已打通），可选 kindo-tts。
+    安装后打开 kindo-hub 的 WebUI 初始化管理员 → 「媒体库→来源与扫描」录入
+    /media/family（模板已挂载你的媒体目录）→ 在「AI 模型」页录入 LLM Provider →
+    TV/Pad 安装 Release 页 APK 配对。
+
+    支持与反馈：GitHub Issues（https://github.com/Aaron-LiLei/kindo/issues）。
+    部署文档：https://github.com/Aaron-LiLei/kindo/blob/main/docs/DEPLOY.md
+  </Profile>
+  <Icon>https://raw.githubusercontent.com/Aaron-LiLei/kindo-unraid/main/icon.svg</Icon>
+  <WebPage>https://github.com/Aaron-LiLei/kindo</WebPage>
+</CommunityApplications>
