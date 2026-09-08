@@ -13,6 +13,9 @@ mkdir kindo && cd kindo
 cp env.example .env            # 编辑：MEDIA_DIR 必填；其余有默认
 mkdir -p config
 cp kindo.example.yaml config/kindo.yaml   # 保持 llm_providers 段注释（见下）
+# Linux NAS：容器以 uid 10001（kindo）运行，数据与模型目录需对其可写
+# （Docker Desktop / Windows 通常无需此步）
+mkdir -p data/hub data/models/asr && sudo chown -R 10001 data/hub data/models/asr
 docker compose up -d
 ```
 

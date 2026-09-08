@@ -13,7 +13,10 @@
    段注释不动**：LLM 推荐走后台录入；要改用环境变量方式，需解开该段注释并在 `.env`
    提供 `KINDO_LLM_BASE_URL` / `KINDO_LLM_API_KEY` / `KINDO_LLM_MODEL`（原样复制且
    未设变量会导致 Hub 启动失败）
-3. `.env` 设置 `MEDIA_DIR`（家庭媒体目录）后：`docker compose up -d`
+3. `.env` 设置 `MEDIA_DIR`（家庭媒体目录）。
+   Linux NAS 请先给数据/模型目录写权限（容器以 uid 10001 运行）：
+   `mkdir -p config data/hub data/models/asr && sudo chown -R 10001 data/hub data/models/asr`
+   完成后：`docker compose up -d`
 4. 首次启动自动下载 ASR 模型（SHA256 校验后持久化到 `data/models/asr`，升级不重复
    下载）。下载期间 kindo-asr 显示 starting/unhealthy 属预期（慢网可达数十分钟）；
    若 `up -d` 曾报 "dependency failed to start"，模型就绪后再执行一次

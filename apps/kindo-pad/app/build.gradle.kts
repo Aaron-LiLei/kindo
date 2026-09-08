@@ -14,8 +14,8 @@ android {
         // Pad 端底线 Android 8（平板实机分布 2026 年均在 12+；26 起自适应图标免 PNG 兜底）
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.1.1"
     }
 
     // 自发布签名（升级链连续性；见 deploy/signing/README.md）

@@ -11,6 +11,8 @@
 #   data/models/tts   TTS 模型卷（可选服务）
 #   config/           kindo.yaml（从 kindo.example.yaml 复制修改）
 #   ${MEDIA_DIR}      家庭媒体目录（只读挂载；来源在后台「媒体库→来源与扫描」录入）
+# Linux NAS 注意：容器以 uid 10001 运行，data/ 目录需 chown 10001 或对齐权限，
+# 否则首次启动模型下载/数据库写入会因无写权限失败（Windows/macOS 一般无需处理）。
 services:
   kindo-hub:
     image: ghcr.io/aaron-lilei/kindo-hub:${KINDO_VERSION:-latest}

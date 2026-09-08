@@ -13,8 +13,8 @@ android {
         applicationId = "org.kindo.tv"
         minSdk = 24
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.1.1"
     }
 
     // 自发布签名（升级链连续性；见 deploy/signing/README.md）
