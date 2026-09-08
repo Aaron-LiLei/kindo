@@ -48,6 +48,15 @@ services:
     volumes:
       - ./data/models/asr:/models
       - ./data/hub:/hub-data:ro             # Hub 生成的语音热词（只读）
+    # 覆盖镜像内置健康检查（start_period 仅 20s）：首次启动要先下载约 217MB 模型包，
+    # 慢网可达数十分钟；下载期间 /health 未起、容器显示 starting 属预期。
+    # 若 up -d 曾报 "dependency failed to start"，模型就绪后再执行一次即可。
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8081/health', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30m
     # 仅容器网络内可达：原始语音只暴露给 Hub（架构 §13）
     expose:
       - "8081"
@@ -64,6 +73,13 @@ services:
       SOURCE_TARBALL_URL: ${TTS_MODEL_URL:-}
     volumes:
       - ./data/models/tts:/models
+    # 覆盖镜像内置健康检查：同 asr，首次启动模型下载（约 157MB）期间 starting 属预期
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8092/health', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30m
     # 仅容器网络内可达：家长声音样本与合成结果只暴露给 Hub（PRD TTS-007）
     expose:
       - "8092"

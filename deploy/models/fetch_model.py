@@ -99,8 +99,9 @@ def verify(model_dir: Path, manifest: list[tuple[str, str]], *, quick: bool = Fa
     for rel, expect in manifest:
         target = model_dir / rel
         if rel.endswith("/"):
-            if not target.is_dir():
-                return f"缺少目录 {rel}"
+            # 目录条目：存在且至少含 1 个文件（防止"只建目录没复制内容"类缺陷静默通过）
+            if not target.is_dir() or not any(p.is_file() for p in target.rglob("*")):
+                return f"目录 {rel} 缺失或为空"
             continue
         if not target.is_file():
             return f"缺少 {rel}"
@@ -188,7 +189,14 @@ def main() -> None:
         for rel, expect in manifest:
             target = model_dir / rel
             if rel.endswith("/"):
-                target.mkdir(parents=True, exist_ok=True)
+                # 目录条目：整树复制（2026-09-08 修复：此前只 mkdir 不复制内容，
+                # 导致 TTS espeak-ng-data 下载后为空目录）
+                src_dir = next(
+                    (p for p in extract_dir.rglob(Path(rel.rstrip("/")).name)
+                     if p.is_dir()), None)
+                if src_dir is None:
+                    die(f"包内未找到目录 {rel}")
+                shutil.copytree(src_dir, target, dirs_exist_ok=True)
                 continue
             hits = [p for p in extract_dir.rglob(Path(rel).name)
                     if p.is_file() and expect and sha256_file(p) == expect]

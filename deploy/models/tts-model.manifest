@@ -1,7 +1,12 @@
-# Kindo 模型清单（SHA256SUMS 格式；目录行以 / 结尾=存在性检查）
+# Kindo 模型清单（SHA256SUMS 格式；目录行以 / 结尾=存在性检查，2026-09-08 起语义
+# 为「存在且非空」——防止只建目录未复制内容的缺陷静默通过）
 # tarball-url: https://github.com/aaron-lilei/kindo/releases/download/model-assets-v1/kindo-tts-zipvoice-distill-v1.tar.gz
 # tarball-sha256: 79a37542355061ff705792af1215ad3bcddf81f654fdd74c3a7de9ddb30ff7ab
 # 根目录: apps\kindo-tts\model
+# 注：2026-09-08 fetch_model.py 修复目录条目整树复制（此前只 mkdir，espeak-ng-data
+# 下载后为空目录且校验被误判通过）。本注释改变了清单指纹，使 v0.1.0 产生的含空
+# 目录模型卷在升级到含此清单的镜像后自动校验失败并重新下载自愈（代价：启用 TTS
+# 的用户升级时重下约 157MB；ASR 清单无目录条目，不受影响、不重下）。
 f2de9a761a85e5ddd125dee6e05bad1c7ee92c11b83b4d775dab216a6aa41379  encoder.int8.onnx
 3cc2e08a96610d7ea1b227398e97cdbbe0414499741d3aec0b8113db2a2ab251  decoder.int8.onnx
 ce98c1afc5f7a20c2484dffdd68a1fff0a4a2cc707328833750c4476c37cdbda  tokens.txt

@@ -21,14 +21,19 @@ playback:
   progress_interval_seconds: 5
   lost_protection_seconds: 120
 
-# LLM Provider：Secret 经 ${ENV} 引用，浏览器/TV 永不接触
-llm_providers:
-  - id: main
-    display_name: 主模型
-    protocol: openai_chat_completions
-    base_url: ${KINDO_LLM_BASE_URL}
-    api_key: ${KINDO_LLM_API_KEY}
-    model: ${KINDO_LLM_MODEL}
+# LLM Provider：Secret 经 ${ENV} 引用，浏览器/TV 永不接触。
+# ${ENV} 占位符在环境变量未设置时会阻断启动（ConfigError），故本段默认注释。
+# 启用方式二选一：
+#   推荐：Web 后台「AI 模型」页录入（Key 落盘加密，无需改本文件）；
+#   或解开本段注释，并在部署环境提供 KINDO_LLM_BASE_URL / KINDO_LLM_API_KEY /
+#   KINDO_LLM_MODEL 三个变量（可写入 .env）。
+# llm_providers:
+#   - id: main
+#     display_name: 主模型
+#     protocol: openai_chat_completions
+#     base_url: ${KINDO_LLM_BASE_URL}
+#     api_key: ${KINDO_LLM_API_KEY}
+#     model: ${KINDO_LLM_MODEL}
 
 # 本地 ASR Provider（kindo-asr 容器）
 asr:
