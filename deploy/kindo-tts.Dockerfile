@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1
 # kindo-tts：本地克隆 TTS Provider（sherpa-onnx ZipVoice-Distill 零样本，纯 CPU）。
 # 模型不进镜像（同 kindo-asr，T-20260902-003-06）：entrypoint 对模型卷做
 # 检查→下载→校验→持久化；缺失时服务以 no_model 降级启动（/health ready:false），
@@ -13,7 +12,7 @@ COPY apps/kindo-tts/pyproject.toml ./
 COPY apps/kindo-tts/src ./src
 RUN pip install --no-cache-dir --no-deps . \
     && useradd --system --uid 10001 --no-create-home kindo \
-    && chown -R kindo:kindo /app
+    && chown -R kindo:kindo /app \
     && install -d -o kindo -g kindo /models
 
 # 模型自动准备：脚本+清单进镜像，模型卷 /models 运行时挂载

@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1
 # kindo-asr：本地 ASR Provider（sherpa-onnx Paraformer）。
 # 模型不进镜像（T-20260902-003-06）：启动时 entrypoint 对模型卷做
 # 检查→下载→校验→持久化（deploy/models/fetch_model.py）；离线部署可直接
@@ -14,7 +13,7 @@ COPY apps/kindo-asr/pyproject.toml ./
 COPY apps/kindo-asr/src ./src
 RUN pip install --no-cache-dir --no-deps . \
     && useradd --system --uid 10001 --no-create-home kindo \
-    && chown -R kindo:kindo /app
+    && chown -R kindo:kindo /app \
     && install -d -o kindo -g kindo /models
 
 # 模型自动准备：脚本+清单进镜像，模型卷 /models 运行时挂载

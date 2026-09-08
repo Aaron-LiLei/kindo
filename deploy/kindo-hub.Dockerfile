@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1
 # kindo-hub：Python FastAPI 模块化单体 + Web Admin 静态资源 + FFmpeg 系统依赖（技术方案 §1）
 # 依赖由 requirements.lock 全量锁定（uv pip compile --universal），构建可复现。
 # 构建上下文 = 仓库根：docker build -f deploy/kindo-hub.Dockerfile .
@@ -20,10 +19,11 @@ COPY apps/kindo-hub/src ./src
 COPY ${ADMIN_DIST} ./admin_dist
 RUN pip install --no-cache-dir --no-deps . \
     && useradd --system --uid 10001 --no-create-home kindo \
-    && chown -R kindo:kindo /app
+    && chown -R kindo:kindo /app \
     && install -d -o kindo -g kindo /data
 
-ENV KINDO_CONFIG=/config/kindo.yaml
+# KINDO_CONFIG 不预设：缺省定位链 /config/kindo.yaml → kindo.yaml → 内置默认
+# （NAS 应用商店一键安装无配置文件也能启动；asr/tts 经 KINDO_*_ENDPOINT 环境变量接线）
 EXPOSE 8090
 USER kindo
 # /health/ready 含 DB/迁移/挂载探测（§16.2）；就绪前不接流量
